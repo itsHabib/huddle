@@ -1,0 +1,30 @@
+# Compiled binaries (root-level)
+/huddle
+/huddle.exe
+/bin/
+
+# Local state
+.huddle-state/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Coverage / profiling
+coverage.out
+coverage.html
+*.prof
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Env / secrets
+.env
+.env.local
+*.key
+
+# Claude Code local config
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
