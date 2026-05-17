@@ -81,13 +81,11 @@ FROM keys WHERE key = ?`
 		return Key{}, fmt.Errorf("%w: parse created_at: %w", huddleerr.ErrStorageFailure, err)
 	}
 
+	// A non-NULL revoked_at means the key is invalid; surface that semantic
+	// directly. Don't bother parsing the timestamp — callers receive a zero Key
+	// and ErrKeyInvalid either way, and parsing would risk masking the semantic
+	// behind an ErrStorageFailure if the stored value happens to be malformed.
 	if revokedRaw.Valid {
-		t, rerr := time.Parse(time.RFC3339Nano, revokedRaw.String)
-		if rerr != nil {
-			return Key{}, fmt.Errorf("%w: parse revoked_at: %w", huddleerr.ErrStorageFailure, rerr)
-		}
-
-		k.RevokedAt = &t
 		return Key{}, huddleerr.ErrKeyInvalid
 	}
 

@@ -102,6 +102,15 @@ func matchHuddle(t *testing.T, want, got types.Huddle) {
 
 	require.True(t, want.CreatedAt.UTC().Equal(got.CreatedAt.UTC()))
 
+	// TTL round-trip is independent of ClosedAt — verify on both paths.
+	switch want.TTLHours {
+	case nil:
+		require.Nil(t, got.TTLHours)
+	default:
+		require.NotNil(t, got.TTLHours)
+		require.Equal(t, *want.TTLHours, *got.TTLHours)
+	}
+
 	if want.ClosedAt == nil {
 		require.Nil(t, got.ClosedAt)
 
@@ -110,14 +119,6 @@ func matchHuddle(t *testing.T, want, got types.Huddle) {
 
 	require.NotNil(t, got.ClosedAt)
 	require.True(t, want.ClosedAt.UTC().Equal(got.ClosedAt.UTC()))
-
-	switch want.TTLHours {
-	case nil:
-		require.Nil(t, got.TTLHours)
-	default:
-		require.NotNil(t, got.TTLHours)
-		require.Equal(t, *want.TTLHours, *got.TTLHours)
-	}
 }
 
 func ptr(v int) *int { return &v }

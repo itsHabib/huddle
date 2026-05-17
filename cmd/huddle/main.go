@@ -36,14 +36,7 @@ func run(args []string) int {
 
 	cfg, err := config.Load()
 	if err != nil {
-		var validation *config.ValidationError
-		if errors.As(err, &validation) {
-			fmt.Fprintf(os.Stderr, "invalid configuration: %v\n", err)
-
-			return 2
-		}
-
-		fmt.Fprintf(os.Stderr, "invalid configuration: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "invalid configuration: %v\n", err)
 
 		return 2
 	}
