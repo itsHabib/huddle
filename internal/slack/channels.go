@@ -38,15 +38,30 @@ func (a *slackGoAdapter) CreateChannel(ctx context.Context, name string) (Channe
 	return ch, nil
 }
 
+// slackChannelNameMax is the Slack-side hard limit on conversation names.
+// Names longer than this are rejected with `invalid_name_maxlength`.
+const slackChannelNameMax = 80
+
+// nameWithSuffix appends a short disambiguator to name for the
+// `name_taken` retry path. The suffix is `-<hex4>` (5 chars) — when
+// adding it would push the result past Slack's 80-char limit, the base
+// is truncated first so the final string always fits. Falls back to a
+// monotonic counter if crypto/rand isn't available.
 func nameWithSuffix(name string, seq *atomic.Uint64) string {
+	var suffix string
 	buf := make([]byte, 2)
 	if _, err := rand.Read(buf); err == nil {
-		return fmt.Sprintf("%s-%x", name, buf)
+		suffix = fmt.Sprintf("-%x", buf)
+	} else {
+		suffix = fmt.Sprintf("-%d", seq.Add(1))
 	}
 
-	n := seq.Add(1)
+	base := name
+	if budget := slackChannelNameMax - len(suffix); len(base) > budget {
+		base = base[:budget]
+	}
 
-	return fmt.Sprintf("%s-%d", name, n)
+	return base + suffix
 }
 
 func (a *slackGoAdapter) createConversation(ctx context.Context, name string) (Channel, error) {
