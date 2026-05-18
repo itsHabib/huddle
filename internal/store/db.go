@@ -1,0 +1,114 @@
+// Package store holds SQLite-backed persistence for huddles and seat keys.
+package store
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	_ "embed"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	huddleerr "github.com/itsHabib/huddle/internal/errors"
+
+	// Pure-Go SQLite (no CGO).
+	_ "modernc.org/sqlite"
+)
+
+//go:embed schema.sql
+var schemaSQL string
+
+// Store wraps SQLite access with small domain helpers.
+type Store struct {
+	db *sql.DB
+}
+
+// sqliteDSN converts a filesystem path into a SQLite DSN understood by modernc.org/sqlite.
+func sqliteDSN(absPath string) string {
+	sp := filepath.ToSlash(absPath)
+
+	return fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)", sp)
+}
+
+// New opens SQLite under stateDir/huddle.sqlite, ensuring the schema exists.
+func New(stateDir string) (*Store, error) {
+	stateDir = filepath.Clean(stateDir)
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create state dir: %w", err)
+	}
+
+	dbPath := filepath.Join(stateDir, "huddle.sqlite")
+	absPath, absErr := filepath.Abs(dbPath)
+	if absErr != nil {
+		return nil, absErr
+	}
+
+	db, err := sql.Open("sqlite", sqliteDSN(absPath))
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+
+	s := &Store{db: db}
+	if err = s.ApplySchema(context.Background()); err != nil {
+		closeErr := s.Close()
+
+		return nil, errors.Join(err, closeErr)
+	}
+
+	return s, nil
+}
+
+// OpenMemory opens an isolated in-memory SQLite (for tests). Each call returns
+// a fresh, independent DB — the DSN is uniquified per call so parallel tests
+// don't see each other's rows.
+func OpenMemory(ctx context.Context) (*Store, error) {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return nil, fmt.Errorf("generate memory db name: %w", err)
+	}
+	name := hex.EncodeToString(buf[:])
+
+	dsn := fmt.Sprintf("file:huddle-mem-%s?mode=memory&cache=shared&_pragma=foreign_keys(ON)", name)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+
+	s := &Store{db: db}
+	if err := s.ApplySchema(ctx); err != nil {
+		closeErr := s.Close()
+
+		return nil, errors.Join(err, closeErr)
+	}
+
+	return s, nil
+}
+
+// ApplySchema runs the embedded DDL idempotently.
+func (s *Store) ApplySchema(ctx context.Context) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("%w: nil connection", huddleerr.ErrStorageFailure)
+	}
+
+	_, err := s.db.ExecContext(ctx, schemaSQL)
+	if err != nil {
+		return fmt.Errorf("%w: %w", huddleerr.ErrStorageFailure, err)
+	}
+
+	return nil
+}
+
+// Close shuts down database handles.
+func (s *Store) Close() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+
+	err := s.db.Close()
+	s.db = nil
+
+	return err
+}
