@@ -14,7 +14,10 @@ type stubVerb struct {
 	OK   bool   `json:"ok"`
 }
 
-// RegisterVerbStubs wires remaining v0 tool names with deterministic placeholder results.
+// RegisterVerbStubs wires all v0 verb handlers. All six v0 verbs now have
+// real handlers — no stubs remain. The stub-registration scaffolding is
+// retained for future verbs that may ship as no-op stubs before their
+// handlers land.
 func RegisterVerbStubs(s *mcp.Server, deps Deps) {
 	hdep := handlers.Deps{
 		Slack: deps.Slack,
@@ -27,12 +30,11 @@ func RegisterVerbStubs(s *mcp.Server, deps Deps) {
 	handlers.RegisterClose(s, hdep)
 	handlers.RegisterWhoElse(s, hdep)
 	handlers.RegisterList(s, hdep)
+	handlers.RegisterPost(s, hdep)
+	handlers.RegisterRead(s, hdep)
 
 	const description = `Foundation stub; handler logic arrives in downstream streams`
-	verbs := [...]string{
-		"huddle.post",
-		"huddle.read",
-	}
+	verbs := [...]string{}
 
 	deps.Log.Info("wiring MCP stub tools", slog.Int("stub_count", len(verbs)))
 

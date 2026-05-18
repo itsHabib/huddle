@@ -63,11 +63,22 @@ func (f *FakeAdapter) PostMessage(_ context.Context, channelID, text, threadTS s
 	return ts, nil
 }
 
-// History returns a copy of configured history messages or HistErr.
+// History returns the seeded messages, filtering out system subtypes
+// the same way the real adapter does so handler tests see consistent
+// behavior across the fake and real Slack paths.
 func (f *FakeAdapter) History(_ context.Context, _ string, _ *time.Time, _ int) ([]types.Message, error) {
 	if f.HistErr != nil {
 		return nil, f.HistErr
 	}
 
-	return append([]types.Message(nil), f.Hist...), nil
+	out := make([]types.Message, 0, len(f.Hist))
+	for _, m := range f.Hist {
+		if isSystemHistorySubType(m.SubType) {
+			continue
+		}
+
+		out = append(out, m)
+	}
+
+	return out, nil
 }

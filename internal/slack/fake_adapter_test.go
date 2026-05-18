@@ -34,3 +34,16 @@ func TestFakeAdapterHistoryPassesThrough(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 }
+
+func TestFakeAdapterHistorySkipsSystemSubTypes(t *testing.T) {
+	t.Parallel()
+
+	ad := FakeAdapter{Hist: []types.Message{
+		{ID: "1", SubType: "channel_join", Body: "ignored"},
+		{ID: "2", Body: "hi", Identity: types.Identity{Kind: types.IdentityKindSeat, DisplayName: "s"}},
+	}}
+	out, err := ad.History(context.Background(), "C-any", nil, 10)
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, "2", out[0].ID)
+}

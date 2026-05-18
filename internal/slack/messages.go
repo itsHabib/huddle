@@ -70,6 +70,12 @@ func (a *slackGoAdapter) History(ctx context.Context, channelID string, since *t
 // and shouldn't appear in huddle history. Everything else (including
 // thread_broadcast, me_message, file_share, bot_message, message_replied)
 // is legitimate content posted by users or apps.
+func isSystemHistorySubType(subType string) bool {
+	_, ok := systemSubTypes[strings.TrimSpace(subType)]
+
+	return ok
+}
+
 var systemSubTypes = map[string]struct{}{
 	"channel_join":      {},
 	"channel_leave":     {},
@@ -92,7 +98,7 @@ func mapConversationMessages(messages []slackapi.Message) ([]types.Message, erro
 
 	for _, sm := range messages {
 		subType := strings.TrimSpace(sm.SubType)
-		if _, isSystem := systemSubTypes[subType]; isSystem {
+		if isSystemHistorySubType(subType) {
 			continue
 		}
 
