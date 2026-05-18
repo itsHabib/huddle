@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/itsHabib/huddle/internal/handlers"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -18,13 +20,15 @@ func RegisterVerbStubs(s *mcp.Server, deps Deps) {
 	verbs := [...]string{
 		"huddle.create",
 		"huddle.close",
-		"huddle.list",
 		"huddle.post",
 		"huddle.read",
-		"huddle.who_else",
 	}
 
-	deps.Log.Info("wiring MCP foundation stubs", slog.Int("tool_count", len(verbs)))
+	hdep := handlers.Deps{Store: deps.Store}
+	handlers.RegisterWhoElse(s, hdep)
+	handlers.RegisterList(s, hdep)
+
+	deps.Log.Info("wiring MCP stub tools", slog.Int("stub_count", len(verbs)))
 
 	for _, name := range verbs {
 		title := name

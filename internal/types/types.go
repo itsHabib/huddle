@@ -89,9 +89,11 @@ type CloseResult struct {
 	ArchivedChannel string `json:"archivedChannel,omitempty"`
 }
 
-// ListArgs selects which huddle rows surface.
+// ListArgs selects which huddle rows surface. Active is optional: nil
+// returns all huddles; *true returns only open ones; *false is equivalent
+// to nil. Pointer type so the MCP schema reflects optionality.
 type ListArgs struct {
-	Active bool `json:"active"`
+	Active *bool `json:"active,omitempty"`
 }
 
 // PostArgs routes posts from seats or orchestrator paths (handler validation later).
