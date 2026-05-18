@@ -169,6 +169,27 @@ FROM huddles`
 	return out, nil
 }
 
+// DeleteHuddle removes a huddle row by id; ON DELETE CASCADE on the keys FK
+// drops any associated seat keys. Used by huddle.create's compensation path
+// when post-channel-creation persistence fails partway through.
+func (s *Store) DeleteHuddle(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM huddles WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("%w: %w", huddleerr.ErrStorageFailure, err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%w: %w", huddleerr.ErrStorageFailure, err)
+	}
+
+	if n == 0 {
+		return huddleerr.ErrHuddleNotFound
+	}
+
+	return nil
+}
+
 // MarkClosed records closed_at for a huddle id.
 func (s *Store) MarkClosed(ctx context.Context, id string, t time.Time) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE huddles SET closed_at = ? WHERE id = ?`, t.UTC().Format(time.RFC3339Nano), id)

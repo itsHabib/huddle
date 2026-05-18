@@ -80,6 +80,13 @@ func (a *slackGoAdapter) createConversation(ctx context.Context, name string) (C
 
 func (a *slackGoAdapter) ArchiveChannel(ctx context.Context, channelID string) error {
 	if err := a.client.ArchiveConversationContext(ctx, channelID); err != nil {
+		// Treat `already_archived` as idempotent success so retries after
+		// a partial-success path (archive ok, MarkClosed failed) can
+		// converge instead of failing forever.
+		if slackErrorCode(err) == "already_archived" {
+			return nil
+		}
+
 		return fmt.Errorf("archive channel %s: %w", channelID, err)
 	}
 

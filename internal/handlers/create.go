@@ -49,6 +49,10 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 		return types.CreateResult{}, huddleerr.MCPError(jsonrpc.CodeInternalError, fmt.Errorf("slack create channel: %w", err))
 	}
 
+	// From here on, any failure must compensate the Slack channel + any
+	// persisted huddle/keys so we don't leak channels or leave partial
+	// state behind. Lookups use a fresh context so we still clean up
+	// even if the caller cancels the original.
 	now := time.Now().UTC()
 
 	h := types.Huddle{
@@ -62,11 +66,22 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 	}
 
 	if err = deps.Store.InsertHuddle(ctx, h); err != nil {
+		// Compensation: archive the channel we just created so we
+		// don't leak it. Best-effort; log via slog and otherwise
+		// swallow because the original error is the headline.
+		archiveOrphanChannel(ctx, deps, ch.ID, "insert huddle failed")
+
 		return types.CreateResult{}, huddleerr.MCPError(jsonrpc.CodeInternalError, fmt.Errorf("insert huddle: %w", err))
 	}
 
 	seatsOut, err := insertSeatKeys(ctx, deps, huddleID, args.Seats, now)
 	if err != nil {
+		// Compensation: the huddle row + any partial keys are now
+		// orphans. DeleteHuddle cascades to keys via ON DELETE CASCADE,
+		// then archive the channel. Best-effort.
+		deleteOrphanHuddle(ctx, deps, huddleID, "insert seat keys failed")
+		archiveOrphanChannel(ctx, deps, ch.ID, "insert seat keys failed")
+
 		return types.CreateResult{}, err
 	}
 
@@ -76,6 +91,39 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 		Orchestrator: types.Seat{DisplayName: orchName},
 		Seats:        seatsOut,
 	}, nil
+}
+
+// archiveOrphanChannel runs the Slack archive call against a context
+// derived from ctx but explicitly uncancellable, so cleanup survives the
+// caller's cancellation. Errors are logged and swallowed (the original
+// error is the headline).
+func archiveOrphanChannel(ctx context.Context, deps Deps, channelID, reason string) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	if err := deps.Slack.ArchiveChannel(cleanupCtx, channelID); err != nil {
+		deps.Log.Warn("orphan channel archive failed during compensation",
+			"channel_id", channelID,
+			"reason", reason,
+			"error", err.Error(),
+		)
+	}
+}
+
+// deleteOrphanHuddle removes a huddle row that was inserted as part of a
+// create that subsequently failed. Cascades to keys via the schema's FK.
+// Same uncancellable-context rationale as archiveOrphanChannel.
+func deleteOrphanHuddle(ctx context.Context, deps Deps, huddleID, reason string) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	if err := deps.Store.DeleteHuddle(cleanupCtx, huddleID); err != nil {
+		deps.Log.Warn("orphan huddle delete failed during compensation",
+			"huddle_id", huddleID,
+			"reason", reason,
+			"error", err.Error(),
+		)
+	}
 }
 
 func validateAndNormalizeCreate(args types.CreateArgs) (string, string, error) {
