@@ -116,7 +116,12 @@ type ReadArgs struct {
 	Key      string     `json:"key,omitempty"`
 	HuddleID string     `json:"huddleId,omitempty"`
 	Since    *time.Time `json:"since,omitempty,omitzero"`
-	Limit    int        `json:"limit"`
+	Limit    int        `json:"limit,omitempty"`
+}
+
+// ReadResult is the object-shaped MCP output for huddle.read (SDK requires a JSON object).
+type ReadResult struct {
+	Messages []Message `json:"messages"`
 }
 
 // WhoElseArgs ties to a seating key today.
