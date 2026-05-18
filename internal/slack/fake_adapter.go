@@ -12,6 +12,7 @@ type FakeAdapter struct {
 	Chan         Channel
 	Hist         []types.Message
 	Posts        [][]string // channelID, rendered text, threadTS
+	Invites      [][]string // channelID, userID
 	CreatedNames []string
 	ArchivedIDs  []string
 
@@ -19,6 +20,7 @@ type FakeAdapter struct {
 	HistErr    error
 	PostErr    error
 	ArchiveErr error
+	InviteErr  error
 
 	ReturnedTS string
 }
@@ -35,6 +37,16 @@ func (f *FakeAdapter) CreateChannel(_ context.Context, name string) (Channel, er
 	}
 
 	return Channel{ID: f.Chan.ID, Name: f.Chan.Name}, nil
+}
+
+// InviteUserToChannel records the (channelID, userID) pair and returns the configured error.
+func (f *FakeAdapter) InviteUserToChannel(_ context.Context, channelID, userID string) error {
+	f.Invites = append(f.Invites, []string{channelID, userID})
+	if f.InviteErr != nil {
+		return f.InviteErr
+	}
+
+	return nil
 }
 
 // ArchiveChannel records the channel id that would be archived.

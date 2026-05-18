@@ -78,6 +78,21 @@ func (a *slackGoAdapter) createConversation(ctx context.Context, name string) (C
 	}, nil
 }
 
+// InviteUserToChannel adds a single Slack user to channelID. Treats
+// `already_in_channel` as idempotent success so re-runs converge instead of
+// erroring on the second invite.
+func (a *slackGoAdapter) InviteUserToChannel(ctx context.Context, channelID, userID string) error {
+	if _, err := a.client.InviteUsersToConversationContext(ctx, channelID, userID); err != nil {
+		if slackErrorCode(err) == "already_in_channel" {
+			return nil
+		}
+
+		return fmt.Errorf("invite user %s to channel %s: %w", userID, channelID, err)
+	}
+
+	return nil
+}
+
 func (a *slackGoAdapter) ArchiveChannel(ctx context.Context, channelID string) error {
 	if err := a.client.ArchiveConversationContext(ctx, channelID); err != nil {
 		// Treat `already_archived` as idempotent success so retries after
