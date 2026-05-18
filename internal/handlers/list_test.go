@@ -35,9 +35,9 @@ func TestList_emptyStore(t *testing.T) {
 	raw, mErr := json.Marshal(res.StructuredContent)
 	require.NoError(t, mErr)
 
-	var got []types.Huddle
+	var got handlers.ListResult
 	require.NoError(t, json.Unmarshal(raw, &got))
-	require.Empty(t, got)
+	require.Empty(t, got.Huddles)
 }
 
 func TestList_activeFilter_andOrder(t *testing.T) {
@@ -73,11 +73,11 @@ func TestList_activeFilter_andOrder(t *testing.T) {
 	rawAll, mErr := json.Marshal(resAll.StructuredContent)
 	require.NoError(t, mErr)
 
-	var gotAll []types.Huddle
+	var gotAll handlers.ListResult
 	require.NoError(t, json.Unmarshal(rawAll, &gotAll))
-	require.Len(t, gotAll, 3)
+	require.Len(t, gotAll.Huddles, 3)
 	// store.ListHuddles orders by created_at ASC (oldest first)
-	require.Equal(t, []string{"h_a", "h_b", "h_c"}, []string{gotAll[0].ID, gotAll[1].ID, gotAll[2].ID})
+	require.Equal(t, []string{"h_a", "h_b", "h_c"}, []string{gotAll.Huddles[0].ID, gotAll.Huddles[1].ID, gotAll.Huddles[2].ID})
 
 	resActive, err := cs.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "huddle.list",
@@ -88,10 +88,10 @@ func TestList_activeFilter_andOrder(t *testing.T) {
 	rawActive, mErr2 := json.Marshal(resActive.StructuredContent)
 	require.NoError(t, mErr2)
 
-	var gotActive []types.Huddle
+	var gotActive handlers.ListResult
 	require.NoError(t, json.Unmarshal(rawActive, &gotActive))
-	require.Len(t, gotActive, 2)
-	require.Equal(t, []string{"h_a", "h_c"}, []string{gotActive[0].ID, gotActive[1].ID})
+	require.Len(t, gotActive.Huddles, 2)
+	require.Equal(t, []string{"h_a", "h_c"}, []string{gotActive.Huddles[0].ID, gotActive.Huddles[1].ID})
 }
 
 func TestList_responseShape_hasNoKeyMaterial(t *testing.T) {
@@ -128,18 +128,20 @@ func TestList_responseShape_hasNoKeyMaterial(t *testing.T) {
 	raw, mErr := json.Marshal(res.StructuredContent)
 	require.NoError(t, mErr)
 
-	var rows []map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw, &rows))
-	require.Len(t, rows, 1)
+	var wrapper struct {
+		Huddles []map[string]json.RawMessage `json:"huddles"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &wrapper))
+	require.Len(t, wrapper.Huddles, 1)
 
-	row := rows[0]
+	row := wrapper.Huddles[0]
 	_, hasKey := row["key"]
 	require.False(t, hasKey)
 	_, hasKeys := row["keys"]
 	require.False(t, hasKeys)
 
-	var typed []types.Huddle
+	var typed handlers.ListResult
 	require.NoError(t, json.Unmarshal(raw, &typed))
-	require.Len(t, typed, 1)
-	require.Equal(t, h.ID, typed[0].ID)
+	require.Len(t, typed.Huddles, 1)
+	require.Equal(t, h.ID, typed.Huddles[0].ID)
 }
