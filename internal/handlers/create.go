@@ -50,6 +50,11 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 		return types.CreateResult{}, huddleerr.MCPError(jsonrpc.CodeInternalError, fmt.Errorf("slack create channel: %w", err))
 	}
 
+	// Best-effort invite of the configured human orchestrator. Failure is
+	// logged but doesn't fail the create — the huddle is still functional;
+	// the human can join the public channel manually.
+	inviteOrchestrator(ctx, deps, ch.ID)
+
 	// From here on, any failure must compensate the Slack channel + any
 	// persisted huddle/keys so we don't leak channels or leave partial
 	// state behind. Lookups use a fresh context so we still clean up
@@ -92,6 +97,25 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 		Orchestrator: types.Seat{DisplayName: orchName},
 		Seats:        seatsOut,
 	}, nil
+}
+
+// inviteOrchestrator adds the configured human orchestrator (env
+// HUDDLE_ORCHESTRATOR_SLACK_USER_ID) to channelID. Skipped if the env is
+// unset; logged-and-swallowed on failure because the huddle is otherwise
+// usable and the channel is public.
+func inviteOrchestrator(ctx context.Context, deps Deps, channelID string) {
+	userID := strings.TrimSpace(deps.Cfg.OrchestratorSlackUserID)
+	if userID == "" {
+		return
+	}
+
+	if err := deps.Slack.InviteUserToChannel(ctx, channelID, userID); err != nil {
+		compensationLogger(deps).Warn("orchestrator invite failed",
+			"channel_id", channelID,
+			"user_id", userID,
+			"error", err.Error(),
+		)
+	}
 }
 
 // compensationLogger returns deps.Log when set, falling back to slog's

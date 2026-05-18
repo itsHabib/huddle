@@ -373,6 +373,7 @@ Env vars loaded by `src/config.ts`:
 | `HUDDLE_STATE_DIR` | no | `./.huddle-state` | Where `huddle.sqlite` lives |
 | `HUDDLE_LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error` |
 | `HUDDLE_CHANNEL_PREFIX` | no | `huddle-` | Prefix for created Slack channels |
+| `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` | no | — | If set, auto-invites this Slack user (`U…`) to every channel `huddle.create` opens. Best-effort: invite failure is logged, not propagated. |
 
 `config.ts` validates at startup; missing required → process exits with a clear error message.
 

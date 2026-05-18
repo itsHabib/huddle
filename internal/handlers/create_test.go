@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +175,80 @@ func TestCreateSlackCollisionAfterRetryInternalError(t *testing.T) {
 		Seats:   []types.SeatDefinition{{ID: "x", DisplayName: "y"}},
 	})
 	requireRPCCode(t, execErr, jsonrpc.CodeInternalError)
+}
+
+func TestCreateInvitesConfiguredOrchestrator(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	fa := &slack.FakeAdapter{}
+	deps := Deps{
+		Slack: fa,
+		Store: st,
+		Cfg: config.Config{
+			ChannelPrefix:           "huddle-",
+			OrchestratorSlackUserID: "U0ABC123",
+		},
+	}
+
+	_, execErr := executeCreate(ctx, deps, types.CreateArgs{
+		Purpose: "p",
+		Seats:   []types.SeatDefinition{{ID: "s1", DisplayName: "one"}},
+	})
+	require.NoError(t, execErr)
+	require.Len(t, fa.Invites, 1)
+	require.Equal(t, fa.Chan.ID, fa.Invites[0][0])
+	require.Equal(t, "U0ABC123", fa.Invites[0][1])
+}
+
+func TestCreateSkipsInviteWhenNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	fa := &slack.FakeAdapter{}
+	deps := Deps{Slack: fa, Store: st, Cfg: config.Config{ChannelPrefix: "huddle-"}}
+
+	_, execErr := executeCreate(ctx, deps, types.CreateArgs{
+		Purpose: "p",
+		Seats:   []types.SeatDefinition{{ID: "s1", DisplayName: "one"}},
+	})
+	require.NoError(t, execErr)
+	require.Empty(t, fa.Invites)
+}
+
+func TestCreateInviteFailureDoesNotFailCreate(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	fa := &slack.FakeAdapter{InviteErr: errors.New("user_not_found")}
+	deps := Deps{
+		Slack: fa,
+		Store: st,
+		Cfg: config.Config{
+			ChannelPrefix:           "huddle-",
+			OrchestratorSlackUserID: "U0BADID",
+		},
+	}
+
+	res, execErr := executeCreate(ctx, deps, types.CreateArgs{
+		Purpose: "p",
+		Seats:   []types.SeatDefinition{{ID: "s1", DisplayName: "one"}},
+	})
+	require.NoError(t, execErr)
+	require.NotEmpty(t, res.HuddleID)
+	require.Len(t, fa.Invites, 1)
 }
 
 func requireRPCCode(t *testing.T, err error, want int64) {

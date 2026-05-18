@@ -10,23 +10,25 @@ import (
 )
 
 const (
-	envSlackBotToken  = "HUDDLE_SLACK_BOT_TOKEN"
-	envStateDir       = "HUDDLE_STATE_DIR"
-	envLogLevel       = "HUDDLE_LOG_LEVEL"
-	envChannelPrefix  = "HUDDLE_CHANNEL_PREFIX"
-	envSlackWorkspace = "HUDDLE_SLACK_WORKSPACE"
-	defaultStateDir   = "./.huddle-state"
-	defaultLogLevel   = "info"
-	defaultChanPrefix = "huddle-"
+	envSlackBotToken            = "HUDDLE_SLACK_BOT_TOKEN"
+	envStateDir                 = "HUDDLE_STATE_DIR"
+	envLogLevel                 = "HUDDLE_LOG_LEVEL"
+	envChannelPrefix            = "HUDDLE_CHANNEL_PREFIX"
+	envSlackWorkspace           = "HUDDLE_SLACK_WORKSPACE"
+	envOrchestratorSlackUserID  = "HUDDLE_ORCHESTRATOR_SLACK_USER_ID"
+	defaultStateDir             = "./.huddle-state"
+	defaultLogLevel             = "info"
+	defaultChanPrefix           = "huddle-"
 )
 
 // Config holds validated runtime flags for one huddle process.
 type Config struct {
-	SlackBotToken  string
-	SlackWorkspace string
-	StateDir       string
-	LogLevel       slog.Level
-	ChannelPrefix  string
+	SlackBotToken           string
+	SlackWorkspace          string
+	StateDir                string
+	LogLevel                slog.Level
+	ChannelPrefix           string
+	OrchestratorSlackUserID string
 }
 
 // ValidationError aggregates missing env contract violations.
@@ -82,11 +84,12 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		SlackBotToken:  token,
-		SlackWorkspace: strings.TrimSpace(os.Getenv(envSlackWorkspace)),
-		StateDir:       stateDir,
-		LogLevel:       lvl,
-		ChannelPrefix:  channelPrefix,
+		SlackBotToken:           token,
+		SlackWorkspace:          strings.TrimSpace(os.Getenv(envSlackWorkspace)),
+		StateDir:                stateDir,
+		LogLevel:                lvl,
+		ChannelPrefix:           channelPrefix,
+		OrchestratorSlackUserID: strings.TrimSpace(os.Getenv(envOrchestratorSlackUserID)),
 	}
 	return cfg, nil
 }
