@@ -6,6 +6,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -93,6 +94,18 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 	}, nil
 }
 
+// compensationLogger returns deps.Log when set, falling back to slog's
+// default logger so the compensation path never panics on a nil Log.
+// Handler-test fixtures often omit Log when building Deps; that path
+// converted partial-failure errors into process crashes before this.
+func compensationLogger(deps Deps) *slog.Logger {
+	if deps.Log != nil {
+		return deps.Log
+	}
+
+	return slog.Default()
+}
+
 // archiveOrphanChannel runs the Slack archive call against a context
 // derived from ctx but explicitly uncancellable, so cleanup survives the
 // caller's cancellation. Errors are logged and swallowed (the original
@@ -102,7 +115,7 @@ func archiveOrphanChannel(ctx context.Context, deps Deps, channelID, reason stri
 	defer cancel()
 
 	if err := deps.Slack.ArchiveChannel(cleanupCtx, channelID); err != nil {
-		deps.Log.Warn("orphan channel archive failed during compensation",
+		compensationLogger(deps).Warn("orphan channel archive failed during compensation",
 			"channel_id", channelID,
 			"reason", reason,
 			"error", err.Error(),
@@ -118,7 +131,7 @@ func deleteOrphanHuddle(ctx context.Context, deps Deps, huddleID, reason string)
 	defer cancel()
 
 	if err := deps.Store.DeleteHuddle(cleanupCtx, huddleID); err != nil {
-		deps.Log.Warn("orphan huddle delete failed during compensation",
+		compensationLogger(deps).Warn("orphan huddle delete failed during compensation",
 			"huddle_id", huddleID,
 			"reason", reason,
 			"error", err.Error(),
