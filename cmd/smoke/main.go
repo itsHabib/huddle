@@ -37,6 +37,10 @@ func run() error {
 		return errors.New("HUDDLE_SLACK_BOT_TOKEN must be set in the env")
 	}
 
+	if os.Getenv("HUDDLE_ORCHESTRATOR_SLACK_USER_ID") == "" {
+		fmt.Fprintln(os.Stderr, "WARN: HUDDLE_ORCHESTRATOR_SLACK_USER_ID is not set; you will not be auto-invited to the smoke channel. Export it to receive an invite.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 

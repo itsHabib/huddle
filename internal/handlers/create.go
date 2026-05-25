@@ -103,10 +103,18 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 // inviteOrchestrator adds the configured human orchestrator (env
 // HUDDLE_ORCHESTRATOR_SLACK_USER_ID) to channelID. Skipped if the env is
 // unset; logged-and-swallowed on failure because the huddle is otherwise
-// usable and the channel is public.
+// usable and the channel is public. The skip is logged at info level so
+// that operators who expected to be invited (a common expectation, since
+// the env is documented and usually configured) get a breadcrumb rather
+// than a silent absence.
 func inviteOrchestrator(ctx context.Context, deps Deps, channelID string) {
 	userID := strings.TrimSpace(deps.Cfg.OrchestratorSlackUserID)
 	if userID == "" {
+		compensationLogger(deps).Info("orchestrator invite skipped",
+			"channel_id", channelID,
+			"reason", "HUDDLE_ORCHESTRATOR_SLACK_USER_ID unset",
+		)
+
 		return
 	}
 
