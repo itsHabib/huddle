@@ -93,9 +93,42 @@ func (s *Store) ApplySchema(ctx context.Context) error {
 		return fmt.Errorf("%w: nil connection", huddleerr.ErrStorageFailure)
 	}
 
-	_, err := s.db.ExecContext(ctx, schemaSQL)
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("%w: %w", huddleerr.ErrStorageFailure, err)
+	}
+
+	if err := s.backfillColumns(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// backfillColumns adds columns that landed after the original CREATE TABLE
+// to pre-existing databases. SQLite has no `ALTER TABLE ... ADD COLUMN IF
+// NOT EXISTS`, so we probe pragma_table_info per column and add only when
+// missing. New databases already have these columns via CREATE TABLE.
+func (s *Store) backfillColumns(ctx context.Context) error {
+	cols := []struct{ table, column, ddl string }{
+		{"huddles", "orchestrator_id", `ALTER TABLE huddles ADD COLUMN orchestrator_id TEXT NOT NULL DEFAULT 'orchestrator'`},
+	}
+
+	for _, c := range cols {
+		var present int
+		row := s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`,
+			c.table, c.column)
+		if err := row.Scan(&present); err != nil {
+			return fmt.Errorf("%w: probe %s.%s: %w", huddleerr.ErrStorageFailure, c.table, c.column, err)
+		}
+
+		if present > 0 {
+			continue
+		}
+
+		if _, err := s.db.ExecContext(ctx, c.ddl); err != nil {
+			return fmt.Errorf("%w: backfill %s.%s: %w", huddleerr.ErrStorageFailure, c.table, c.column, err)
+		}
 	}
 
 	return nil

@@ -25,12 +25,13 @@ func (s *Store) InsertHuddle(ctx context.Context, h types.Huddle) error {
 
 	q := `
 INSERT INTO huddles (
-  id, purpose, orchestrator_display_name,
+  id, purpose, orchestrator_id, orchestrator_display_name,
   slack_channel_id, slack_channel_name, created_at, closed_at, ttl_hours
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, q,
 		h.ID,
 		h.Purpose,
+		h.OrchestratorID,
 		h.OrchestratorDisplayName,
 		h.SlackChannelID,
 		h.SlackChannelName,
@@ -48,7 +49,7 @@ INSERT INTO huddles (
 // LookupHuddle returns a huddle by id.
 func (s *Store) LookupHuddle(ctx context.Context, id string) (types.Huddle, error) {
 	q := `
-SELECT id, purpose, orchestrator_display_name, slack_channel_id, slack_channel_name,
+SELECT id, purpose, orchestrator_id, orchestrator_display_name, slack_channel_id, slack_channel_name,
        created_at, closed_at, ttl_hours
 FROM huddles WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, q, id)
@@ -63,6 +64,7 @@ FROM huddles WHERE id = ?`
 	err := row.Scan(
 		&h.ID,
 		&h.Purpose,
+		&h.OrchestratorID,
 		&h.OrchestratorDisplayName,
 		&h.SlackChannelID,
 		&h.SlackChannelName,
@@ -103,7 +105,7 @@ FROM huddles WHERE id = ?`
 // ListHuddles returns all huddles, optionally restricted to open rows.
 func (s *Store) ListHuddles(ctx context.Context, activeOnly bool) ([]types.Huddle, error) {
 	q := `
-SELECT id, purpose, orchestrator_display_name, slack_channel_id, slack_channel_name,
+SELECT id, purpose, orchestrator_id, orchestrator_display_name, slack_channel_id, slack_channel_name,
        created_at, closed_at, ttl_hours
 FROM huddles`
 	if activeOnly {
@@ -130,6 +132,7 @@ FROM huddles`
 		if scanErr := rows.Scan(
 			&h.ID,
 			&h.Purpose,
+			&h.OrchestratorID,
 			&h.OrchestratorDisplayName,
 			&h.SlackChannelID,
 			&h.SlackChannelName,

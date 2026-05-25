@@ -37,7 +37,7 @@ func RegisterCreate(s *mcp.Server, deps Deps) {
 }
 
 func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types.CreateResult, error) {
-	purpose, orchName, err := validateAndNormalizeCreate(args)
+	purpose, orchID, orchName, err := validateAndNormalizeCreate(args)
 	if err != nil {
 		return types.CreateResult{}, err
 	}
@@ -64,6 +64,7 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 	h := types.Huddle{
 		ID:                      huddleID,
 		Purpose:                 purpose,
+		OrchestratorID:          orchID,
 		OrchestratorDisplayName: orchName,
 		SlackChannelID:          ch.ID,
 		SlackChannelName:        ch.Name,
@@ -94,7 +95,7 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 	return types.CreateResult{
 		HuddleID:     huddleID,
 		Channel:      ch.Name,
-		Orchestrator: types.Seat{DisplayName: orchName},
+		Orchestrator: types.Seat{ID: orchID, DisplayName: orchName},
 		Seats:        seatsOut,
 	}, nil
 }
@@ -163,36 +164,41 @@ func deleteOrphanHuddle(ctx context.Context, deps Deps, huddleID, reason string)
 	}
 }
 
-func validateAndNormalizeCreate(args types.CreateArgs) (string, string, error) {
-	orchName := strings.TrimSpace(args.Orchestrator.DisplayName)
+func validateAndNormalizeCreate(args types.CreateArgs) (purpose, orchID, orchName string, err error) {
+	orchID = strings.TrimSpace(args.Orchestrator.ID)
+	if orchID == "" {
+		orchID = "orchestrator"
+	}
+
+	orchName = strings.TrimSpace(args.Orchestrator.DisplayName)
 	if orchName == "" {
 		orchName = "orchestrator"
 	}
 
-	purpose := strings.TrimSpace(args.Purpose)
+	purpose = strings.TrimSpace(args.Purpose)
 	if purpose == "" {
-		return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("purpose is required"))
+		return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("purpose is required"))
 	}
 
 	if len(args.Seats) == 0 {
-		return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("at least one seat is required"))
+		return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("at least one seat is required"))
 	}
 
 	seen := make(map[string]struct{}, len(args.Seats))
 	for _, seat := range args.Seats {
 		id := strings.TrimSpace(seat.ID)
 		if id == "" {
-			return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("seat id must not be empty"))
+			return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("seat id must not be empty"))
 		}
 
 		if _, dup := seen[id]; dup {
-			return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, fmt.Errorf("duplicate seat id %q", id))
+			return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, fmt.Errorf("duplicate seat id %q", id))
 		}
 
 		seen[id] = struct{}{}
 	}
 
-	return purpose, orchName, nil
+	return purpose, orchID, orchName, nil
 }
 
 func insertSeatKeys(ctx context.Context, deps Deps, huddleID string, seats []types.SeatDefinition, now time.Time) ([]types.CreatedSeat, error) {
