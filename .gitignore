@@ -5,6 +5,10 @@
 /smoke.exe
 /seed-huddle
 /seed-huddle.exe
+/seat
+/seat.exe
+/dbprobe
+/dbprobe.exe
 /bin/
 
 # Local state
