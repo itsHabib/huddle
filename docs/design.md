@@ -15,7 +15,7 @@ If the catalog entry and this doc disagree, the catalog entry wins on intent; th
 **Go**, single module, layered as `cmd/` + `internal/` (matches tower + sense).
 
 Rationale:
-- Primary language for the operator (Hadrian Go shop); maintenance velocity highest.
+- Primary language for the operator; maintenance velocity highest.
 - Matches sense as the reference scaffold (external-API-wrapper shape: `client.go` / `messages.go` / `cache.go` / etc.).
 - Matches tower as the deployment reference (single static binary, `Taskfile.yml` for dev tasks, `cmd/<name>/main.go` entry).
 - Single-binary distribution is straightforward — relevant when ship-going-remote lands and huddle needs to deploy as a service rather than a local stdio process.
