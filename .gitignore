@@ -1,6 +1,8 @@
 # Compiled binaries (root-level)
 /huddle
 /huddle.exe
+/smoke
+/smoke.exe
 /bin/
 
 # Local state
