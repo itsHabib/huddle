@@ -1,6 +1,6 @@
 # huddle — design doc
 
-Status: design, 2026-05-17. No code yet.
+Status: shipped v0 — 2026-05-17 design → 2026-05-18 last-major-change. Tracks v1 from here.
 Owner: itsHabib
 Catalog entry: [`pers/mcp-workstation/huddle.md`](../../mcp-workstation/huddle.md) — the "what." This doc is the "how."
 
@@ -22,7 +22,7 @@ Rationale:
 - Official MCP Go SDK exists and is production-ready: `github.com/modelcontextprotocol/go-sdk` v1.6.0 (May 2026), maintained by the modelcontextprotocol org in collaboration with Google. Stdio transport supported out of the box.
 - `slack-go/slack` is the well-trodden Slack client.
 
-Trade-offs accepted: ~20% more code than TS (explicit `if err != nil`, no `zod` equivalent — small handwritten validators per verb). Worth it for the language fit.
+Trade-offs accepted: ~20% more code than TS (explicit `if err != nil`, small handwritten validators per verb). Worth it for the language fit.
 
 ## Repo layout
 
@@ -41,8 +41,10 @@ pers/huddle/
 ├── docs/
 │   └── design.md                # this file
 ├── cmd/
-│   └── huddle/
-│       └── main.go              # MCP server entry; wires handlers, starts stdio loop
+│   ├── huddle/
+│   │   └── main.go              # MCP server entry; wires handlers, starts stdio loop
+│   └── smoke/
+│       └── main.go              # MCP-client e2e harness driving the huddle binary as a subprocess (gated by HUDDLE_SLACK_BOT_TOKEN; manual runs, not CI)
 ├── internal/
 │   ├── server/                  # MCP server setup (modelcontextprotocol/go-sdk) + tool registration
 │   │   └── server.go
@@ -72,14 +74,13 @@ pers/huddle/
 │   │   └── config.go            # env var loading + validation
 │   └── errors/
 │       └── errors.go            # typed errors + MCP error-code mapping
-└── test/
-    └── e2e/
-        └── dogfood_test.go      # against real Slack workspace (gated by HUDDLE_E2E=1)
 ```
+
+**e2e harness lives in `cmd/smoke/`, not `test/e2e/`.** The v0 build chose a CLI smoke harness over `go test`-gated e2e for better extensibility (smoke can be hand-invoked, replayed against a fresh huddle, scripted from outside Go). Design originally proposed `test/e2e/dogfood_test.go`; impl shipped `cmd/smoke/main.go` instead.
 
 Notable Go-isms:
 - `internal/` makes packages private to the module; nothing imports `huddle/internal/...` from outside.
-- `cmd/huddle/main.go` is the only `main` package; thin wiring layer.
+- `cmd/huddle/main.go` is the MCP server entry; `cmd/smoke/main.go` is the manual e2e harness — both thin wiring layers.
 - `//go:embed schema.sql` in `internal/store/db.go` bundles the schema into the binary.
 
 ## Dependencies
@@ -364,22 +365,21 @@ Migrations: schema file applied idempotently at startup via `CREATE ... IF NOT E
 
 ## Configuration
 
-Env vars loaded by `src/config.ts`:
+Env vars loaded by `internal/config/config.go`:
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `HUDDLE_SLACK_BOT_TOKEN` | yes | — | Slack bot token (`xoxb-...`) |
-| `HUDDLE_SLACK_WORKSPACE` | no | inferred | Workspace name for log messages |
 | `HUDDLE_STATE_DIR` | no | `./.huddle-state` | Where `huddle.sqlite` lives |
 | `HUDDLE_LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error` |
 | `HUDDLE_CHANNEL_PREFIX` | no | `huddle-` | Prefix for created Slack channels |
 | `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` | no | — | If set, auto-invites this Slack user (`U…`) to every channel `huddle.create` opens. Best-effort: invite failure is logged, not propagated. |
 
-`config.ts` validates at startup; missing required → process exits with a clear error message.
+`internal/config/config.go` validates at startup; missing required → process exits with a clear error message.
 
 ## Error handling
 
-- **Input validation errors** (zod): MCP error code `-32602` (invalid params), human-readable message.
+- **Input validation errors** (handwritten per-verb validators in `internal/handlers/`): MCP error code `-32602` (invalid params), human-readable message.
 - **Slack API errors**:
   - Rate limit (`429`): retry up to 3× with exponential backoff (1s, 2s, 4s) using the `Retry-After` header. If still failing, return MCP error `-32603` with `slack_rate_limited`.
   - Missing scope: return `-32603` with `slack_missing_scope` and the required scope name in the message.
@@ -414,9 +414,9 @@ type Adapter interface {
 Real impl wraps `*slack.Client`; tests use a `FakeAdapter` recording calls + returning canned responses. No HTTP mocking needed.
 
 **E2E (gated):**
-- `test/e2e/dogfood_test.go` — runs only when `HUDDLE_E2E=1` and `HUDDLE_SLACK_BOT_TOKEN` are set; calls the real Slack workspace.
+- `cmd/smoke/main.go` — manual smoke harness; requires `HUDDLE_SLACK_BOT_TOKEN`; drives the huddle binary as a subprocess against a real Slack workspace.
 - Creates a huddle, posts as orchestrator + seat, reads back, closes, archives. Cleans up channel on completion.
-- Standard `go test -tags=e2e ./test/e2e/...` or `make test-e2e` (Makefile target).
+- Invoked via `go run ./cmd/smoke` or `make test-e2e` (Makefile target).
 
 **Coverage target:** 80% lines on `internal/handlers/`, `internal/slack/encoding.go`, `internal/store/`. Lower elsewhere is fine. `go test -cover ./...` for the headline number.
 
@@ -433,7 +433,7 @@ Smallest-cuts-first so each step is reviewable:
 7. **Handler: `post`** (seat + orchestrator paths). Manual verify on Slack.
 8. **Handler: `read`.** Round-trip a posted message through Slack history + prefix-decode.
 9. **Handlers: `who_else` + `list`.** SQLite-only; fast.
-10. **E2E dogfood test.** All six verbs in one test (`test/e2e/dogfood_test.go`, env-gated).
+10. **E2E smoke harness.** All six verbs in one run (`cmd/smoke/main.go`, manual; gated by `HUDDLE_SLACK_BOT_TOKEN`).
 11. **Dogfood session.** Two real Claude Code sessions in a huddle. Validate day-to-day UX.
 
 Each step is a separate commit (or PR if going through Ship). Don't burst.
@@ -455,7 +455,7 @@ test-cover:
 	go test -cover ./...
 
 test-e2e:
-	HUDDLE_E2E=1 go test -tags=e2e ./test/e2e/...
+	go run ./cmd/smoke
 
 lint:
 	golangci-lint run

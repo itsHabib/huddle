@@ -14,7 +14,6 @@ const (
 	envStateDir                = "HUDDLE_STATE_DIR"
 	envLogLevel                = "HUDDLE_LOG_LEVEL"
 	envChannelPrefix           = "HUDDLE_CHANNEL_PREFIX"
-	envSlackWorkspace          = "HUDDLE_SLACK_WORKSPACE"
 	envOrchestratorSlackUserID = "HUDDLE_ORCHESTRATOR_SLACK_USER_ID"
 	defaultStateDir            = "./.huddle-state"
 	defaultLogLevel            = "info"
@@ -24,7 +23,6 @@ const (
 // Config holds validated runtime flags for one huddle process.
 type Config struct {
 	SlackBotToken           string
-	SlackWorkspace          string
 	StateDir                string
 	LogLevel                slog.Level
 	ChannelPrefix           string
@@ -85,7 +83,6 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		SlackBotToken:           token,
-		SlackWorkspace:          strings.TrimSpace(os.Getenv(envSlackWorkspace)),
 		StateDir:                stateDir,
 		LogLevel:                lvl,
 		ChannelPrefix:           channelPrefix,
