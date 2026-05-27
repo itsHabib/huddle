@@ -92,7 +92,7 @@ batches:
   - id: 4
     label: serial (adds govulncheck job to ci.yml)
     depends_on: [3]
-    status: in_progress
+    status: done
     streams:
       - task_id: tsk_01KSKPGJBS238NFCHXMA9WFBXA
         task_slug: ci-govulncheck-workflow
@@ -100,7 +100,10 @@ batches:
         branch_name: polish-ci-govulncheck-workflow
         runtime: local
         touches: [.github/workflows/ci.yml]
-        status: in_progress
+        status: done
+        pr_number: 15
+        merge_commit: 95a658cbde7c29bc5f6e98ee5ac2b54ad03ade3e
+        merged_at: 2026-05-27T06:02:30Z
 
 conflict_notes:
   - kind: wide_blast
