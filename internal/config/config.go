@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	envSlackBotToken            = "HUDDLE_SLACK_BOT_TOKEN"
-	envStateDir                 = "HUDDLE_STATE_DIR"
-	envLogLevel                 = "HUDDLE_LOG_LEVEL"
-	envChannelPrefix            = "HUDDLE_CHANNEL_PREFIX"
-	envSlackWorkspace           = "HUDDLE_SLACK_WORKSPACE"
-	envOrchestratorSlackUserID  = "HUDDLE_ORCHESTRATOR_SLACK_USER_ID"
-	defaultStateDir             = "./.huddle-state"
-	defaultLogLevel             = "info"
-	defaultChanPrefix           = "huddle-"
+	envSlackBotToken           = "HUDDLE_SLACK_BOT_TOKEN"
+	envStateDir                = "HUDDLE_STATE_DIR"
+	envLogLevel                = "HUDDLE_LOG_LEVEL"
+	envChannelPrefix           = "HUDDLE_CHANNEL_PREFIX"
+	envSlackWorkspace          = "HUDDLE_SLACK_WORKSPACE"
+	envOrchestratorSlackUserID = "HUDDLE_ORCHESTRATOR_SLACK_USER_ID"
+	defaultStateDir            = "./.huddle-state"
+	defaultLogLevel            = "info"
+	defaultChanPrefix          = "huddle-"
 )
 
 // Config holds validated runtime flags for one huddle process.
