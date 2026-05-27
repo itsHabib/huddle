@@ -76,7 +76,7 @@ batches:
   - id: 3
     label: serial (adds lint job to ci.yml)
     depends_on: [2]
-    status: in_progress
+    status: done
     streams:
       - task_id: tsk_01KSKPG4CG534QG76YVKM41WKJ
         task_slug: ci-lint-workflow
@@ -84,12 +84,15 @@ batches:
         branch_name: polish-ci-lint-workflow
         runtime: local
         touches: [.github/workflows/ci.yml]
-        status: in_progress
+        status: done
+        pr_number: 14
+        merge_commit: 3b3c4d131161f5ff349780342c2f04fc7e95f850
+        merged_at: 2026-05-27T05:55:15Z
 
   - id: 4
     label: serial (adds govulncheck job to ci.yml)
     depends_on: [3]
-    status: pending
+    status: in_progress
     streams:
       - task_id: tsk_01KSKPGJBS238NFCHXMA9WFBXA
         task_slug: ci-govulncheck-workflow
@@ -97,7 +100,7 @@ batches:
         branch_name: polish-ci-govulncheck-workflow
         runtime: local
         touches: [.github/workflows/ci.yml]
-        status: pending
+        status: in_progress
 
 conflict_notes:
   - kind: wide_blast
