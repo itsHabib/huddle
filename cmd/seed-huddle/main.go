@@ -5,11 +5,19 @@
 // the channel — it just creates and prints the huddle id + seat keys in
 // a copy-paste-friendly form, then exits.
 //
-// Requires HUDDLE_SLACK_BOT_TOKEN in the env. Honors
-// HUDDLE_ORCHESTRATOR_SLACK_USER_ID for the auto-invite. Other huddle
-// env vars are inherited from the parent process and apply to the
-// long-lived state — pass the same HUDDLE_STATE_DIR that your Claude
-// Code MCP uses so the resulting huddle is also visible to other
+// Environment:
+//
+//   - HUDDLE_SLACK_BOT_TOKEN (required) — same token the huddle MCP needs.
+//   - HUDDLE_ORCHESTRATOR_SLACK_USER_ID (optional) — Slack user id to
+//     auto-invite to the channel; warns to stderr when unset.
+//   - HUDDLE_ORCHESTRATOR_ID (optional, default "operator") — stable id
+//     persisted on the huddle row and surfaced via huddle.who_else.
+//   - HUDDLE_ORCHESTRATOR_DISPLAY_NAME (optional, defaults to ORCHESTRATOR_ID)
+//     — display name shown in Slack messages.
+//
+// Other huddle env vars are inherited from the parent process and apply
+// to the long-lived state — pass the same HUDDLE_STATE_DIR that your
+// Claude Code MCP uses so the resulting huddle is also visible to other
 // huddle MCP clients on this machine.
 //
 // Usage:
@@ -41,13 +49,56 @@ func main() {
 	}
 }
 
+type seedOut struct {
+	HuddleID     string `json:"huddleId"`
+	Channel      string `json:"channel"`
+	Orchestrator struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"displayName"`
+	} `json:"orchestrator"`
+	Seats []struct {
+		ID          string `json:"id"`
+		Key         string `json:"key"`
+		DisplayName string `json:"displayName"`
+	} `json:"seats"`
+}
+
 func run(argv []string) error {
+	purpose, seats, err := parseSeedArgs(argv)
+	if err != nil {
+		return err
+	}
+
+	if err := requireSeedEnv(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	sess, cleanup, err := dialHuddle(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	orchID, orchName := orchestratorFromEnv()
+	out, err := callCreate(ctx, sess, purpose, orchID, orchName, seats)
+	if err != nil {
+		return err
+	}
+
+	printSeedSummary(out)
+	return nil
+}
+
+func parseSeedArgs(argv []string) (string, []map[string]any, error) {
 	if len(argv) < 3 {
-		return errors.New("usage: seed-huddle <purpose> <seat-id> [<seat-id> ...]")
+		return "", nil, errors.New("usage: seed-huddle <purpose> <seat-id> [<seat-id> ...]")
 	}
 	purpose := strings.TrimSpace(argv[1])
 	if purpose == "" {
-		return errors.New("purpose must be non-empty")
+		return "", nil, errors.New("purpose must be non-empty")
 	}
 
 	seatIDs := argv[2:]
@@ -55,36 +106,27 @@ func run(argv []string) error {
 	for _, id := range seatIDs {
 		id = strings.TrimSpace(id)
 		if id == "" {
-			return errors.New("seat id must be non-empty")
+			return "", nil, errors.New("seat id must be non-empty")
 		}
 		seats = append(seats, map[string]any{
 			"id":          id,
 			"displayName": id,
 		})
 	}
+	return purpose, seats, nil
+}
 
+func requireSeedEnv() error {
 	if os.Getenv("HUDDLE_SLACK_BOT_TOKEN") == "" {
 		return errors.New("HUDDLE_SLACK_BOT_TOKEN must be set in the env")
 	}
 	if os.Getenv("HUDDLE_ORCHESTRATOR_SLACK_USER_ID") == "" {
 		fmt.Fprintln(os.Stderr, "WARN: HUDDLE_ORCHESTRATOR_SLACK_USER_ID is not set; you will not be auto-invited.")
 	}
+	return nil
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	cmd := exec.Command("go", "run", "./cmd/huddle")
-	cmd.Env = os.Environ()
-	cmd.Stderr = os.Stderr
-
-	transport := &mcp.CommandTransport{Command: cmd}
-	client := mcp.NewClient(&mcp.Implementation{Name: "seed-huddle", Version: "v0.0.1"}, nil)
-	sess, err := client.Connect(ctx, transport, nil)
-	if err != nil {
-		return fmt.Errorf("connect: %w", err)
-	}
-	defer func() { _ = sess.Close() }()
-
+func orchestratorFromEnv() (string, string) {
 	orchID := strings.TrimSpace(os.Getenv("HUDDLE_ORCHESTRATOR_ID"))
 	if orchID == "" {
 		orchID = "operator"
@@ -93,7 +135,24 @@ func run(argv []string) error {
 	if orchName == "" {
 		orchName = orchID
 	}
+	return orchID, orchName
+}
 
+func dialHuddle(ctx context.Context) (*mcp.ClientSession, func(), error) {
+	cmd := exec.CommandContext(ctx, "go", "run", "./cmd/huddle")
+	cmd.Env = os.Environ()
+	cmd.Stderr = os.Stderr
+
+	transport := &mcp.CommandTransport{Command: cmd}
+	client := mcp.NewClient(&mcp.Implementation{Name: "seed-huddle", Version: "v0.0.1"}, nil)
+	sess, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("connect: %w", err)
+	}
+	return sess, func() { _ = sess.Close() }, nil
+}
+
+func callCreate(ctx context.Context, sess *mcp.ClientSession, purpose, orchID, orchName string, seats []map[string]any) (seedOut, error) {
 	res, err := sess.CallTool(ctx, &mcp.CallToolParams{
 		Name: "huddle.create",
 		Arguments: map[string]any{
@@ -103,39 +162,30 @@ func run(argv []string) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("huddle.create: %w", err)
+		return seedOut{}, fmt.Errorf("huddle.create: %w", err)
 	}
 	if res.IsError {
-		var msg string
+		var b strings.Builder
 		for _, c := range res.Content {
 			if tc, ok := c.(*mcp.TextContent); ok {
-				msg += tc.Text
+				b.WriteString(tc.Text)
 			}
 		}
-		return fmt.Errorf("huddle.create returned error: %s", msg)
+		return seedOut{}, fmt.Errorf("huddle.create returned error: %s", b.String())
 	}
 
 	buf, err := json.Marshal(res.StructuredContent)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return seedOut{}, fmt.Errorf("marshal: %w", err)
 	}
-	var out struct {
-		HuddleID     string `json:"huddleId"`
-		Channel      string `json:"channel"`
-		Orchestrator struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"displayName"`
-		} `json:"orchestrator"`
-		Seats []struct {
-			ID          string `json:"id"`
-			Key         string `json:"key"`
-			DisplayName string `json:"displayName"`
-		} `json:"seats"`
-	}
+	var out seedOut
 	if err := json.Unmarshal(buf, &out); err != nil {
-		return fmt.Errorf("unmarshal: %w", err)
+		return seedOut{}, fmt.Errorf("unmarshal: %w", err)
 	}
+	return out, nil
+}
 
+func printSeedSummary(out seedOut) {
 	fmt.Println()
 	fmt.Println("Huddle created. Hand a key to each seat agent.")
 	fmt.Println()
@@ -154,6 +204,4 @@ func run(argv []string) error {
 	fmt.Println("  - call mcp__huddle__huddle_post    { key: \"<their key>\", body: \"...\" } to post")
 	fmt.Println()
 	fmt.Println("The huddle stays open until someone calls mcp__huddle__huddle_close { huddleId: \"" + out.HuddleID + "\" }.")
-
-	return nil
 }

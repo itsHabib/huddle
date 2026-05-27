@@ -11,8 +11,12 @@
 //	seat post     --key K_… --body "..."
 //	seat who-else --key K_…
 //
-// Environment: HUDDLE_SLACK_BOT_TOKEN required for any subcommand that
-// hits Slack (read, post). who-else only touches local state.
+// Environment: HUDDLE_SLACK_BOT_TOKEN must be set in the env for every
+// subcommand. Only `read` and `post` need it operationally, but the
+// spawned huddle MCP subprocess fails to start without it (config.Load
+// requires it), so `who-else` would error out at connect time anyway. A
+// follow-up could relax config.Load to make `who-else` token-less; until
+// then, the gate stays uniform.
 package main
 
 import (
@@ -24,6 +28,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -59,7 +64,7 @@ func run(verb, key, body string, limit int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.Command("go", "run", "./cmd/huddle")
+	cmd := exec.CommandContext(ctx, "go", "run", "./cmd/huddle")
 	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 
@@ -97,13 +102,13 @@ func run(verb, key, body string, limit int) error {
 		return err
 	}
 	if res.IsError {
-		var msg string
+		var b strings.Builder
 		for _, c := range res.Content {
 			if tc, ok := c.(*mcp.TextContent); ok {
-				msg += tc.Text
+				b.WriteString(tc.Text)
 			}
 		}
-		return fmt.Errorf("%s returned error: %s", name, msg)
+		return fmt.Errorf("%s returned error: %s", name, b.String())
 	}
 
 	buf, _ := json.MarshalIndent(res.StructuredContent, "", "  ")
