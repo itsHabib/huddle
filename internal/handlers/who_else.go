@@ -44,6 +44,7 @@ func RegisterWhoElse(s *mcp.Server, deps Deps) {
 		out := types.WhoElseResult{
 			Purpose: hdl.Purpose,
 			Orchestrator: types.Seat{
+				ID:          hdl.OrchestratorID,
 				DisplayName: hdl.OrchestratorDisplayName,
 			},
 			Seats: seats,

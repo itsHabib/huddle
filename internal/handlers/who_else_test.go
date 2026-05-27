@@ -29,6 +29,7 @@ func TestWhoElse_OK_includesCallerSeatAndPeers(t *testing.T) {
 	h := types.Huddle{
 		ID:                      "hud_who_else",
 		Purpose:                 "sync",
+		OrchestratorID:          "michael",
 		OrchestratorDisplayName: "lead",
 		SlackChannelID:          "C1",
 		SlackChannelName:        "huddle-sync",
@@ -62,7 +63,7 @@ func TestWhoElse_OK_includesCallerSeatAndPeers(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &got))
 
 	require.Equal(t, "sync", got.Purpose)
-	require.Equal(t, "lead", got.Orchestrator.DisplayName)
+	require.Equal(t, types.Seat{ID: "michael", DisplayName: "lead"}, got.Orchestrator)
 	require.ElementsMatch(t, []types.Seat{
 		{ID: "s1", DisplayName: "one"},
 		{ID: "s2", DisplayName: "two"},

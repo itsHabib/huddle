@@ -21,6 +21,23 @@ import (
 const version = "v0.0.1"
 
 func main() {
+	// jsonschema-go publishes `"type": ["null", "T"]` for slice and pointer
+	// fields. That's valid JSON Schema, but Claude Code's MCP harness only
+	// understands singular `"type": "T"` and falls back to sending the value
+	// as a string when it sees a type union — which fails server-side
+	// validation. The library exposes a debug env that switches slice fields
+	// to singular `"type": "array"`; setting it here lets the multi-seat
+	// huddle.create call through the harness. Pointer fields (TTLHours,
+	// ListArgs.Active, ReadArgs.Since) still publish `["null", "T"]`, but
+	// they're all optional — clients just omit them.
+	// Only set the env if the operator hasn't already configured it, so a
+	// caller running with a custom JSONSCHEMAGODEBUG (e.g. for unrelated
+	// debugging) isn't silently clobbered.
+	// TODO: replace with explicit InputSchema overrides per tool when we're
+	// willing to maintain hand-rolled schemas.
+	if os.Getenv("JSONSCHEMAGODEBUG") == "" {
+		_ = os.Setenv("JSONSCHEMAGODEBUG", "typeschemasnull=1")
+	}
 	os.Exit(run(os.Args))
 }
 

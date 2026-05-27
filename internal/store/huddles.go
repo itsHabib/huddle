@@ -11,8 +11,30 @@ import (
 	"github.com/itsHabib/huddle/internal/types"
 )
 
-// InsertHuddle persists a brand-new huddle row.
+// DefaultOrchestratorID is the sentinel persisted when a caller doesn't
+// supply a stable orchestrator identifier. It must match the DEFAULT
+// clause on `huddles.orchestrator_id` in schema.sql and the backfill DDL
+// in db.go so legacy rows, fresh CREATE TABLE rows, and Go-side defaults
+// all agree.
+const DefaultOrchestratorID = "orchestrator"
+
+// DefaultOrchestratorDisplayName mirrors DefaultOrchestratorID for the
+// display-name column. Same agreement requirement with schema.sql.
+const DefaultOrchestratorDisplayName = "orchestrator"
+
+// InsertHuddle persists a brand-new huddle row. Defaults empty
+// orchestrator fields to their sentinels so callers building a
+// types.Huddle directly (bypassing the handler's normalize step) can't
+// accidentally persist an empty-string orchestrator_id and bypass the
+// schema-level DEFAULT.
 func (s *Store) InsertHuddle(ctx context.Context, h types.Huddle) error {
+	if h.OrchestratorID == "" {
+		h.OrchestratorID = DefaultOrchestratorID
+	}
+	if h.OrchestratorDisplayName == "" {
+		h.OrchestratorDisplayName = DefaultOrchestratorDisplayName
+	}
+
 	var closed sql.NullString
 	if h.ClosedAt != nil {
 		closed = sql.NullString{String: h.ClosedAt.UTC().Format(time.RFC3339Nano), Valid: true}
@@ -25,12 +47,13 @@ func (s *Store) InsertHuddle(ctx context.Context, h types.Huddle) error {
 
 	q := `
 INSERT INTO huddles (
-  id, purpose, orchestrator_display_name,
+  id, purpose, orchestrator_id, orchestrator_display_name,
   slack_channel_id, slack_channel_name, created_at, closed_at, ttl_hours
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, q,
 		h.ID,
 		h.Purpose,
+		h.OrchestratorID,
 		h.OrchestratorDisplayName,
 		h.SlackChannelID,
 		h.SlackChannelName,
@@ -48,7 +71,7 @@ INSERT INTO huddles (
 // LookupHuddle returns a huddle by id.
 func (s *Store) LookupHuddle(ctx context.Context, id string) (types.Huddle, error) {
 	q := `
-SELECT id, purpose, orchestrator_display_name, slack_channel_id, slack_channel_name,
+SELECT id, purpose, orchestrator_id, orchestrator_display_name, slack_channel_id, slack_channel_name,
        created_at, closed_at, ttl_hours
 FROM huddles WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, q, id)
@@ -63,6 +86,7 @@ FROM huddles WHERE id = ?`
 	err := row.Scan(
 		&h.ID,
 		&h.Purpose,
+		&h.OrchestratorID,
 		&h.OrchestratorDisplayName,
 		&h.SlackChannelID,
 		&h.SlackChannelName,
@@ -103,7 +127,7 @@ FROM huddles WHERE id = ?`
 // ListHuddles returns all huddles, optionally restricted to open rows.
 func (s *Store) ListHuddles(ctx context.Context, activeOnly bool) ([]types.Huddle, error) {
 	q := `
-SELECT id, purpose, orchestrator_display_name, slack_channel_id, slack_channel_name,
+SELECT id, purpose, orchestrator_id, orchestrator_display_name, slack_channel_id, slack_channel_name,
        created_at, closed_at, ttl_hours
 FROM huddles`
 	if activeOnly {
@@ -130,6 +154,7 @@ FROM huddles`
 		if scanErr := rows.Scan(
 			&h.ID,
 			&h.Purpose,
+			&h.OrchestratorID,
 			&h.OrchestratorDisplayName,
 			&h.SlackChannelID,
 			&h.SlackChannelName,

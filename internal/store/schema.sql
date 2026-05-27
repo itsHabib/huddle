@@ -1,6 +1,10 @@
+-- The 'orchestrator' default below must agree with store.DefaultOrchestratorID
+-- and DefaultOrchestratorDisplayName in huddles.go (and the backfill DDL in
+-- db.go) — they form one logical default split across SQL DDL + Go.
 CREATE TABLE IF NOT EXISTS huddles (
   id                          TEXT PRIMARY KEY,
   purpose                     TEXT NOT NULL,
+  orchestrator_id             TEXT NOT NULL DEFAULT 'orchestrator',
   orchestrator_display_name   TEXT NOT NULL DEFAULT 'orchestrator',
   slack_channel_id            TEXT NOT NULL UNIQUE,
   slack_channel_name          TEXT NOT NULL UNIQUE,

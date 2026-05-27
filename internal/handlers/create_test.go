@@ -57,7 +57,7 @@ func TestCreateHappyPathTwoSeats(t *testing.T) {
 
 	args := types.CreateArgs{
 		Purpose:      "Sprint Planning!",
-		Orchestrator: types.Seat{DisplayName: "lead"},
+		Orchestrator: types.Seat{ID: "michael", DisplayName: "lead"},
 		Seats: []types.SeatDefinition{
 			{ID: "seat-a", DisplayName: "agent-a"},
 			{ID: "seat-b", DisplayName: "agent-b"},
@@ -67,7 +67,7 @@ func TestCreateHappyPathTwoSeats(t *testing.T) {
 	res, execErr := executeCreate(ctx, deps, args)
 	require.NoError(t, execErr)
 	require.NotEmpty(t, res.HuddleID)
-	require.Equal(t, "lead", res.Orchestrator.DisplayName)
+	require.Equal(t, types.Seat{ID: "michael", DisplayName: "lead"}, res.Orchestrator)
 	require.Len(t, res.Seats, 2)
 	require.Len(t, fa.CreatedNames, 1)
 	require.Contains(t, fa.CreatedNames[0], "hu-sprint-planning-")
@@ -76,6 +76,7 @@ func TestCreateHappyPathTwoSeats(t *testing.T) {
 	h, lerr := st.LookupHuddle(ctx, res.HuddleID)
 	require.NoError(t, lerr)
 	require.Equal(t, "Sprint Planning!", h.Purpose)
+	require.Equal(t, "michael", h.OrchestratorID)
 	require.Equal(t, "lead", h.OrchestratorDisplayName)
 
 	keyA := res.Seats[0].Key

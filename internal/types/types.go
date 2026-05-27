@@ -39,6 +39,7 @@ type Seat struct {
 type Huddle struct {
 	ID                      string     `json:"id"`
 	Purpose                 string     `json:"purpose"`
+	OrchestratorID          string     `json:"orchestratorId"`
 	OrchestratorDisplayName string     `json:"orchestratorDisplayName"`
 	SlackChannelID          string     `json:"slackChannelId"`
 	SlackChannelName        string     `json:"slackChannelName"`

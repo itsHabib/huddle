@@ -37,7 +37,7 @@ func RegisterCreate(s *mcp.Server, deps Deps) {
 }
 
 func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types.CreateResult, error) {
-	purpose, orchName, err := validateAndNormalizeCreate(args)
+	purpose, orchID, orchName, err := validateAndNormalizeCreate(args)
 	if err != nil {
 		return types.CreateResult{}, err
 	}
@@ -64,6 +64,7 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 	h := types.Huddle{
 		ID:                      huddleID,
 		Purpose:                 purpose,
+		OrchestratorID:          orchID,
 		OrchestratorDisplayName: orchName,
 		SlackChannelID:          ch.ID,
 		SlackChannelName:        ch.Name,
@@ -94,7 +95,7 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 	return types.CreateResult{
 		HuddleID:     huddleID,
 		Channel:      ch.Name,
-		Orchestrator: types.Seat{DisplayName: orchName},
+		Orchestrator: types.Seat{ID: orchID, DisplayName: orchName},
 		Seats:        seatsOut,
 	}, nil
 }
@@ -102,10 +103,18 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 // inviteOrchestrator adds the configured human orchestrator (env
 // HUDDLE_ORCHESTRATOR_SLACK_USER_ID) to channelID. Skipped if the env is
 // unset; logged-and-swallowed on failure because the huddle is otherwise
-// usable and the channel is public.
+// usable and the channel is public. The skip is logged at info level so
+// that operators who expected to be invited (a common expectation, since
+// the env is documented and usually configured) get a breadcrumb rather
+// than a silent absence.
 func inviteOrchestrator(ctx context.Context, deps Deps, channelID string) {
 	userID := strings.TrimSpace(deps.Cfg.OrchestratorSlackUserID)
 	if userID == "" {
+		compensationLogger(deps).Info("orchestrator invite skipped",
+			"channel_id", channelID,
+			"reason", "HUDDLE_ORCHESTRATOR_SLACK_USER_ID unset",
+		)
+
 		return
 	}
 
@@ -163,36 +172,46 @@ func deleteOrphanHuddle(ctx context.Context, deps Deps, huddleID, reason string)
 	}
 }
 
-func validateAndNormalizeCreate(args types.CreateArgs) (string, string, error) {
+func validateAndNormalizeCreate(args types.CreateArgs) (string, string, string, error) {
+	orchID := strings.TrimSpace(args.Orchestrator.ID)
+	if orchID == "" {
+		orchID = store.DefaultOrchestratorID
+	}
+
+	// When the caller supplies an id but no display name, default the
+	// display name to the id so the two fields stay coherent — otherwise
+	// a `{id: "michael"}` orchestrator surfaces as `{id: "michael",
+	// displayName: "orchestrator"}`, which reads as two different
+	// identities. Only fall back to the sentinel when both are absent.
 	orchName := strings.TrimSpace(args.Orchestrator.DisplayName)
 	if orchName == "" {
-		orchName = "orchestrator"
+		orchName = orchID
 	}
 
 	purpose := strings.TrimSpace(args.Purpose)
 	if purpose == "" {
-		return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("purpose is required"))
+		return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("purpose is required"))
 	}
 
 	if len(args.Seats) == 0 {
-		return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("at least one seat is required"))
+		return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("at least one seat is required"))
 	}
 
 	seen := make(map[string]struct{}, len(args.Seats))
 	for _, seat := range args.Seats {
 		id := strings.TrimSpace(seat.ID)
 		if id == "" {
-			return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("seat id must not be empty"))
+			return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("seat id must not be empty"))
 		}
 
 		if _, dup := seen[id]; dup {
-			return "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, fmt.Errorf("duplicate seat id %q", id))
+			return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, fmt.Errorf("duplicate seat id %q", id))
 		}
 
 		seen[id] = struct{}{}
 	}
 
-	return purpose, orchName, nil
+	return purpose, orchID, orchName, nil
 }
 
 func insertSeatKeys(ctx context.Context, deps Deps, huddleID string, seats []types.SeatDefinition, now time.Time) ([]types.CreatedSeat, error) {
