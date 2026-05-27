@@ -59,7 +59,10 @@ func run(verb, key, body string, limit int) error {
 	// Slack-touching verbs (read / post) need HUDDLE_SLACK_BOT_TOKEN; gate
 	// only those. who-else only touches local state — the spawned MCP
 	// boots regardless and serves it without a token.
-	if (verb == "read" || verb == "post") && os.Getenv("HUDDLE_SLACK_BOT_TOKEN") == "" {
+	// TrimSpace to match config.Load's normalization so a token of pure
+	// whitespace fails fast here with a clear message instead of passing
+	// the gate and then having the spawned server return ErrNoToken.
+	if (verb == "read" || verb == "post") && strings.TrimSpace(os.Getenv("HUDDLE_SLACK_BOT_TOKEN")) == "" {
 		return errors.New("HUDDLE_SLACK_BOT_TOKEN must be set in the env for " + verb)
 	}
 

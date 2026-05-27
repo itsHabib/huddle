@@ -37,7 +37,7 @@ func TestLoadHonorsAllEnvVars(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, "xoxb-test-token", cfg.SlackBotToken)
-	require.Contains(t, cfg.StateDir, "huddle-test")
+	require.Equal(t, filepath.Clean("/tmp/huddle-test"), cfg.StateDir)
 	require.Equal(t, slog.LevelDebug, cfg.LogLevel)
 	require.Equal(t, "test-", cfg.ChannelPrefix)
 	require.Equal(t, "U0ABC123", cfg.OrchestratorSlackUserID)

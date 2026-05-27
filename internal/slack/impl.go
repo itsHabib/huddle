@@ -20,7 +20,15 @@ type slackGoAdapter struct {
 // ErrNoToken is returned by every Slack-touching adapter method when the
 // server was started without HUDDLE_SLACK_BOT_TOKEN. Slack-touching verbs
 // (huddle.create / .close / .post / .read) surface this to the caller;
-// huddle.who_else doesn't go through the adapter and is unaffected.
+// huddle.who_else and huddle.list don't go through the adapter and are
+// unaffected.
+//
+// Note on wrapping: handlers pass this through huddleerr.MCPError to
+// serialize it across the MCP/JSON-RPC boundary. That wrapping drops
+// the Go error chain by design — only the .Error() string survives. If
+// a caller needs to detect ErrNoToken post-wrap, they have to match on
+// the message text rather than use errors.Is. The wording is guarded
+// by TestErrNoTokenMessageDocumentsRemedy so it stays stable.
 var ErrNoToken = errors.New("HUDDLE_SLACK_BOT_TOKEN is not set; Slack-touching verbs (create, close, post, read) are unavailable — set the env to enable them")
 
 // NewAdapter wires a Slack Web API Client from configuration. When
