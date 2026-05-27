@@ -14,7 +14,7 @@ batches:
   - id: 1
     label: wide-blast prep (LF baseline)
     depends_on: []
-    status: pending
+    status: done
     streams:
       - task_id: tsk_01KSKPM81X50TM6JS595X6SW9J
         task_slug: gitattributes-eol
@@ -22,12 +22,15 @@ batches:
         branch_name: polish-gitattributes-eol
         runtime: local
         touches: [.gitattributes, "**/* (renormalize)"]
-        status: pending
+        status: done
+        pr_number: 9
+        merge_commit: e0ab871c7e810f284fb33e55b363e6aad00fb0ce
+        merged_at: 2026-05-27T05:32:45Z
 
   - id: 2
     label: parallel-safe (disjoint files)
     depends_on: [1]
-    status: pending
+    status: done
     streams:
       - task_id: tsk_01KSKPFMXSP3R6C2N4X27YQJZC
         task_slug: ci-test-workflow
@@ -35,33 +38,45 @@ batches:
         branch_name: polish-ci-test-workflow
         runtime: local
         touches: [.github/workflows/ci.yml]
-        status: pending
+        status: done
+        pr_number: 10
+        merge_commit: 246935442a748735b31b05aac2e9a6fa94376bb8
+        merged_at: 2026-05-27T05:45:30Z
       - task_id: tsk_01KSKPH36G7NJ10DFB94EZ3G53
         task_slug: ci-coverage-workflow
         spec_path: docs/features/polish-2026-05-18/ci-coverage-workflow.md
         branch_name: polish-ci-coverage-workflow
         runtime: local
         touches: [.github/workflows/coverage.yml]
-        status: pending
+        status: done
+        pr_number: 11
+        merge_commit: 9ac85a24633df8c015ea574be35c0775c22375d1
+        merged_at: 2026-05-27T05:45:45Z
       - task_id: tsk_01KSKPJ8R62HS13CNDPDXQDNTQ
         task_slug: readme-rewrite
         spec_path: docs/features/polish-2026-05-18/readme-rewrite.md
         branch_name: polish-readme-rewrite
         runtime: local
         touches: [README.md]
-        status: pending
+        status: done
+        pr_number: 12
+        merge_commit: ad7cfdb6397ca8085f78abee23c1f8e6ef4addb2
+        merged_at: 2026-05-27T05:46:00Z
       - task_id: tsk_01KSKPKM9T87JKASXEZ3PEVNNY
         task_slug: design-doc-drift
         spec_path: docs/features/polish-2026-05-18/design-doc-drift.md
         branch_name: polish-design-doc-drift
         runtime: local
         touches: [docs/design.md, internal/config/config.go]
-        status: pending
+        status: done
+        pr_number: 13
+        merge_commit: f5b1e5b6a441f767ed2bb7504326e22ad3318d61
+        merged_at: 2026-05-27T05:46:15Z
 
   - id: 3
     label: serial (adds lint job to ci.yml)
     depends_on: [2]
-    status: pending
+    status: in_progress
     streams:
       - task_id: tsk_01KSKPG4CG534QG76YVKM41WKJ
         task_slug: ci-lint-workflow
@@ -69,7 +84,7 @@ batches:
         branch_name: polish-ci-lint-workflow
         runtime: local
         touches: [.github/workflows/ci.yml]
-        status: pending
+        status: in_progress
 
   - id: 4
     label: serial (adds govulncheck job to ci.yml)
