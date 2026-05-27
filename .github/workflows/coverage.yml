@@ -6,19 +6,36 @@ on:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test -coverprofile=coverage.out -covermode=atomic ./...
-      - run: go tool cover -html=coverage.out -o coverage.html
-      - run: |
+      - name: Run tests with coverage
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Generate HTML report
+        if: always()
+        run: |
+          if [ -f coverage.out ]; then go tool cover -html=coverage.out -o coverage.html; fi
+      - name: Write job summary
+        if: always()
+        run: |
           echo "## Coverage" >> $GITHUB_STEP_SUMMARY
-          go tool cover -func=coverage.out | tail -n 1 >> $GITHUB_STEP_SUMMARY
-      - uses: actions/upload-artifact@v4
+          if [ -f coverage.out ]; then
+            go tool cover -func=coverage.out | tail -n 1 >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_no coverage profile produced — see test step for failure details_" >> $GITHUB_STEP_SUMMARY
+          fi
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: coverage
+          retention-days: 30
+          if-no-files-found: ignore
           path: |
             coverage.out
             coverage.html
