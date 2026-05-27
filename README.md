@@ -15,10 +15,10 @@ v0 shipped 2026-05 — six MCP verbs + four CLI binaries. Tracking [polish-2026-
 ## Install
 
 ```sh
-go install github.com/itsHabib/huddle/cmd/huddle@latest
+go install github.com/itsHabib/huddle/cmd/huddle@main
 ```
 
-Or clone and build locally:
+(No semver tags published yet; switch to `@latest` once a release is cut.) Or clone and build locally:
 
 ```sh
 git clone https://github.com/itsHabib/huddle.git
@@ -87,7 +87,7 @@ Each lives under `cmd/<name>/`. `make install` ships `huddle` only; run the othe
 
 ## Configuration
 
-The MCP server reads these environment variables: `HUDDLE_SLACK_BOT_TOKEN` (required), `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, `HUDDLE_SLACK_WORKSPACE`, and `HUDDLE_ORCHESTRATOR_SLACK_USER_ID`. Defaults, validation, and semantics live in [`docs/design.md#configuration`](docs/design.md#configuration).
+The MCP server reads these environment variables: `HUDDLE_SLACK_BOT_TOKEN` (required), `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, and `HUDDLE_ORCHESTRATOR_SLACK_USER_ID`. Defaults, validation, and semantics live in [`docs/design.md#configuration`](docs/design.md#configuration).
 
 ## Stack
 
@@ -96,4 +96,4 @@ Go. Single module, `cmd/` + `internal/` layout (matches tower + sense). Slack vi
 ## Follow-ups
 
 - [`docs/design.md`](docs/design.md) — architecture, handler pseudocode, schema, build sequencing.
-- `~/pers/dossier-state/projects/huddle/` — task tracking in the operator's dossier corpus.
+- [`docs/features/polish-2026-05-18/`](docs/features/polish-2026-05-18/) — current polish phase tracking CI, coverage, README, and design-doc drift.
