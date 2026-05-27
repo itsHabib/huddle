@@ -28,15 +28,17 @@ make install   # builds cmd/huddle → $GOBIN/huddle
 
 ## Quickstart
 
-Set the required Slack token (plus any optional overrides), then start the stdio MCP server:
+Set the Slack token (plus any optional overrides), then start the stdio MCP server:
 
 ```sh
-export HUDDLE_SLACK_BOT_TOKEN=xoxb-...          # required
+export HUDDLE_SLACK_BOT_TOKEN=xoxb-...          # required for create/close/post/read
 export HUDDLE_STATE_DIR=~/.huddle               # optional; default ./.huddle-state
 export HUDDLE_ORCHESTRATOR_SLACK_USER_ID=U...   # optional; auto-invite operator to new channels
 
 make run   # same as go run ./cmd/huddle
 ```
+
+The server boots without `HUDDLE_SLACK_BOT_TOKEN` — `huddle.who_else` is local-only and works either way. Slack-touching verbs (`create` / `close` / `post` / `read`) error at call time with a clear message until the token is set.
 
 Register the server with Claude Code or Claude Desktop so sessions can call the verbs. In Claude Code:
 
@@ -59,7 +61,7 @@ Claude Desktop uses an `mcpServers` block in its config file — same binary and
 }
 ```
 
-Without `HUDDLE_SLACK_BOT_TOKEN`, the process exits immediately with `missing required configuration: HUDDLE_SLACK_BOT_TOKEN`.
+Without `HUDDLE_SLACK_BOT_TOKEN`, the server still boots; Slack-touching verbs return `HUDDLE_SLACK_BOT_TOKEN is not set; Slack-touching verbs (create, close, post, read) are unavailable — set the env to enable them` at call time.
 
 ## v0 verb surface (6 verbs)
 
@@ -87,7 +89,7 @@ Each lives under `cmd/<name>/`. `make install` ships `huddle` only; run the othe
 
 ## Configuration
 
-The MCP server reads these environment variables: `HUDDLE_SLACK_BOT_TOKEN` (required), `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, and `HUDDLE_ORCHESTRATOR_SLACK_USER_ID`. Defaults, validation, and semantics live in [`docs/design.md#configuration`](docs/design.md#configuration).
+The MCP server reads these environment variables: `HUDDLE_SLACK_BOT_TOKEN` (required for Slack-touching verbs), `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, and `HUDDLE_ORCHESTRATOR_SLACK_USER_ID`. Defaults, validation, and semantics live in [`docs/design.md#configuration`](docs/design.md#configuration).
 
 ## Stack
 

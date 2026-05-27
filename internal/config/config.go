@@ -29,28 +29,15 @@ type Config struct {
 	OrchestratorSlackUserID string
 }
 
-// ValidationError aggregates missing env contract violations.
-type ValidationError struct {
-	Missing []string
-}
-
-func (e *ValidationError) Error() string {
-	if e == nil || len(e.Missing) == 0 {
-		return "configuration invalid"
-	}
-	return "missing required configuration: " + strings.Join(e.Missing, ", ")
-}
-
 // Load reads environment variables once and applies defaults documented in docs/design.md.
+//
+// HUDDLE_SLACK_BOT_TOKEN is read but no longer required. Verbs that don't
+// hit Slack (huddle.who_else, plus any future local-only verb) work
+// tokenless. Verbs that do hit Slack — huddle.create, huddle.close,
+// huddle.post, huddle.read — error at call time with a clear message via
+// the slack package's no-token adapter when the token is unset.
 func Load() (Config, error) {
 	token := strings.TrimSpace(os.Getenv(envSlackBotToken))
-	var missing []string
-	if token == "" {
-		missing = append(missing, envSlackBotToken)
-	}
-	if len(missing) > 0 {
-		return Config{}, &ValidationError{Missing: missing}
-	}
 
 	stateDir := strings.TrimSpace(os.Getenv(envStateDir))
 	if stateDir == "" {

@@ -369,13 +369,13 @@ Env vars loaded by `internal/config/config.go`:
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `HUDDLE_SLACK_BOT_TOKEN` | yes | — | Slack bot token (`xoxb-...`) |
+| `HUDDLE_SLACK_BOT_TOKEN` | per-verb | — | Slack bot token (`xoxb-...`). Required for `huddle.create` / `.close` / `.post` / `.read`. `huddle.who_else` is local-only and works without it; the server boots regardless. |
 | `HUDDLE_STATE_DIR` | no | `./.huddle-state` | Where `huddle.sqlite` lives |
 | `HUDDLE_LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error` |
 | `HUDDLE_CHANNEL_PREFIX` | no | `huddle-` | Prefix for created Slack channels |
 | `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` | no | — | If set, auto-invites this Slack user (`U…`) to every channel `huddle.create` opens. Best-effort: invite failure is logged, not propagated. |
 
-`internal/config/config.go` validates at startup; missing required → process exits with a clear error message.
+`internal/config/config.go` reads env vars at startup but no value is strictly required for the process to boot. Slack-touching verbs surface `slack.ErrNoToken` at call time when `HUDDLE_SLACK_BOT_TOKEN` is unset; local-only verbs (`huddle.who_else`) work either way.
 
 ## Error handling
 
