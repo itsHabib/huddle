@@ -23,10 +23,12 @@ test:
 test-cover:
 	go test -cover ./...
 
-# test-e2e runs against a real Slack workspace. Requires HUDDLE_E2E=1 and
-# HUDDLE_SLACK_BOT_TOKEN. NOT part of `make test` or CI.
+# test-e2e drives the huddle MCP binary as a subprocess against a real
+# Slack workspace via `cmd/smoke`. Requires HUDDLE_SLACK_BOT_TOKEN (and
+# optionally HUDDLE_ORCHESTRATOR_SLACK_USER_ID for the auto-invite).
+# NOT part of `make test` or CI — this hits live Slack.
 test-e2e:
-	HUDDLE_E2E=1 go test -tags=e2e -count=1 -v ./test/e2e/...
+	go run ./cmd/smoke
 
 vet:
 	go vet ./...
