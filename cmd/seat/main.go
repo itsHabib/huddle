@@ -11,12 +11,11 @@
 //	seat post     --key K_… --body "..."
 //	seat who-else --key K_…
 //
-// Environment: HUDDLE_SLACK_BOT_TOKEN must be set in the env for every
-// subcommand. Only `read` and `post` need it operationally, but the
-// spawned huddle MCP subprocess fails to start without it (config.Load
-// requires it), so `who-else` would error out at connect time anyway. A
-// follow-up could relax config.Load to make `who-else` token-less; until
-// then, the gate stays uniform.
+// Environment: HUDDLE_SLACK_BOT_TOKEN is required for `read` and `post`
+// (both hit Slack). `who-else` only touches local state and works
+// tokenless; the spawned MCP subprocess boots either way and the slack
+// adapter errors out at call time for Slack-touching verbs when the
+// token is unset.
 package main
 
 import (
@@ -57,8 +56,11 @@ func main() {
 }
 
 func run(verb, key, body string, limit int) error {
-	if os.Getenv("HUDDLE_SLACK_BOT_TOKEN") == "" {
-		return errors.New("HUDDLE_SLACK_BOT_TOKEN must be set in the env")
+	// Slack-touching verbs (read / post) need HUDDLE_SLACK_BOT_TOKEN; gate
+	// only those. who-else only touches local state — the spawned MCP
+	// boots regardless and serves it without a token.
+	if (verb == "read" || verb == "post") && os.Getenv("HUDDLE_SLACK_BOT_TOKEN") == "" {
+		return errors.New("HUDDLE_SLACK_BOT_TOKEN must be set in the env for " + verb)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
