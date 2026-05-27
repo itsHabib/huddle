@@ -35,3 +35,20 @@ jobs:
         with:
           version: v2.12.2
           args: --timeout=5m ./...
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Pin govulncheck to a specific release rather than @latest — for a
+      # security-scanning step, reproducibility matters more than tracking
+      # the head of the tool. Bump deliberately in follow-ups.
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - run: govulncheck ./...
