@@ -110,7 +110,7 @@ func (s *Store) ApplySchema(ctx context.Context) error {
 // missing. New databases already have these columns via CREATE TABLE.
 func (s *Store) backfillColumns(ctx context.Context) error {
 	cols := []struct{ table, column, ddl string }{
-		{"huddles", "orchestrator_id", `ALTER TABLE huddles ADD COLUMN orchestrator_id TEXT NOT NULL DEFAULT 'orchestrator'`},
+		{"huddles", "orchestrator_id", fmt.Sprintf(`ALTER TABLE huddles ADD COLUMN orchestrator_id TEXT NOT NULL DEFAULT '%s'`, DefaultOrchestratorID)},
 	}
 
 	for _, c := range cols {

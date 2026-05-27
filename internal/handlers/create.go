@@ -172,18 +172,23 @@ func deleteOrphanHuddle(ctx context.Context, deps Deps, huddleID, reason string)
 	}
 }
 
-func validateAndNormalizeCreate(args types.CreateArgs) (purpose, orchID, orchName string, err error) {
-	orchID = strings.TrimSpace(args.Orchestrator.ID)
+func validateAndNormalizeCreate(args types.CreateArgs) (string, string, string, error) {
+	orchID := strings.TrimSpace(args.Orchestrator.ID)
 	if orchID == "" {
-		orchID = "orchestrator"
+		orchID = store.DefaultOrchestratorID
 	}
 
-	orchName = strings.TrimSpace(args.Orchestrator.DisplayName)
+	// When the caller supplies an id but no display name, default the
+	// display name to the id so the two fields stay coherent — otherwise
+	// a `{id: "michael"}` orchestrator surfaces as `{id: "michael",
+	// displayName: "orchestrator"}`, which reads as two different
+	// identities. Only fall back to the sentinel when both are absent.
+	orchName := strings.TrimSpace(args.Orchestrator.DisplayName)
 	if orchName == "" {
-		orchName = "orchestrator"
+		orchName = orchID
 	}
 
-	purpose = strings.TrimSpace(args.Purpose)
+	purpose := strings.TrimSpace(args.Purpose)
 	if purpose == "" {
 		return "", "", "", huddleerr.MCPError(jsonrpc.CodeInvalidParams, errors.New("purpose is required"))
 	}

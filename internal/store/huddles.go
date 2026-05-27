@@ -11,8 +11,30 @@ import (
 	"github.com/itsHabib/huddle/internal/types"
 )
 
-// InsertHuddle persists a brand-new huddle row.
+// DefaultOrchestratorID is the sentinel persisted when a caller doesn't
+// supply a stable orchestrator identifier. It must match the DEFAULT
+// clause on `huddles.orchestrator_id` in schema.sql and the backfill DDL
+// in db.go so legacy rows, fresh CREATE TABLE rows, and Go-side defaults
+// all agree.
+const DefaultOrchestratorID = "orchestrator"
+
+// DefaultOrchestratorDisplayName mirrors DefaultOrchestratorID for the
+// display-name column. Same agreement requirement with schema.sql.
+const DefaultOrchestratorDisplayName = "orchestrator"
+
+// InsertHuddle persists a brand-new huddle row. Defaults empty
+// orchestrator fields to their sentinels so callers building a
+// types.Huddle directly (bypassing the handler's normalize step) can't
+// accidentally persist an empty-string orchestrator_id and bypass the
+// schema-level DEFAULT.
 func (s *Store) InsertHuddle(ctx context.Context, h types.Huddle) error {
+	if h.OrchestratorID == "" {
+		h.OrchestratorID = DefaultOrchestratorID
+	}
+	if h.OrchestratorDisplayName == "" {
+		h.OrchestratorDisplayName = DefaultOrchestratorDisplayName
+	}
+
 	var closed sql.NullString
 	if h.ClosedAt != nil {
 		closed = sql.NullString{String: h.ClosedAt.UTC().Format(time.RFC3339Nano), Valid: true}

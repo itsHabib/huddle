@@ -1,6 +1,6 @@
 // Package main is a smoke harness that drives the huddle MCP binary as a
 // subprocess and exercises the v0 verb surface end-to-end against a real
-// Slack workspace. Intended for manual runs ("does this work hand-on?"),
+// Slack workspace. Intended for manual runs ("does this work hands-on?"),
 // not the CI test suite.
 //
 // Requires HUDDLE_SLACK_BOT_TOKEN in the env (a real xoxb- token with the
@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -50,12 +51,12 @@ func run() error {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	cmd := exec.Command("go", "run", "./cmd/huddle")
-	cmd.Env = append(os.Environ(),
-		"HUDDLE_STATE_DIR="+tmpDir,
-		"HUDDLE_CHANNEL_PREFIX=huddle-smoke-",
-		"HUDDLE_LOG_LEVEL=info",
-	)
+	cmd := exec.CommandContext(ctx, "go", "run", "./cmd/huddle")
+	cmd.Env = envWithOverrides(os.Environ(), map[string]string{
+		"HUDDLE_STATE_DIR":      tmpDir,
+		"HUDDLE_CHANNEL_PREFIX": "huddle-smoke-",
+		"HUDDLE_LOG_LEVEL":      "info",
+	})
 	cmd.Stderr = os.Stderr
 
 	transport := &mcp.CommandTransport{Command: cmd}
@@ -66,6 +67,71 @@ func run() error {
 	}
 	defer func() { _ = sess.Close() }()
 
+	return runScenario(ctx, sess)
+}
+
+// runScenario walks the v0 verb tour against an already-connected MCP
+// session: create → who_else (per seat) → post (3) → read → close. Lifted
+// out of run() so each layer is short enough for the cognitive-complexity
+// gate.
+func runScenario(ctx context.Context, sess *mcp.ClientSession) error {
+	createRes, err := smokeCreate(ctx, sess)
+	if err != nil {
+		return err
+	}
+
+	huddleID, _ := createRes["huddleId"].(string)
+	seats := extractSeats(createRes)
+	if huddleID == "" || len(seats) != 2 {
+		return fmt.Errorf("create result missing huddleId or seats: %+v", createRes)
+	}
+
+	if got := orchestratorID(createRes); got != "michael" {
+		return fmt.Errorf("create result orchestrator.id mismatch: got %q, want %q", got, "michael")
+	}
+
+	designer, implementor := seats[0], seats[1]
+	logCreated(huddleID, createRes["channel"])
+
+	// At this point a real Slack channel exists. Try to archive it on any
+	// later failure so we don't leak public channels into the workspace.
+	// context.WithoutCancel preserves any deadlines / values from ctx for
+	// observability but detaches cancellation so the cleanup still runs
+	// when the parent ctx (with its 90s timeout) has expired.
+	closeOnDefer := true
+	defer func() {
+		if !closeOnDefer {
+			return
+		}
+		cctx, ccancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer ccancel()
+		if _, cerr := callJSON(cctx, sess, "huddle.close", map[string]any{"huddleId": huddleID}); cerr != nil {
+			fmt.Fprintf(os.Stderr, "WARN: deferred huddle.close failed: %v\n", cerr)
+		}
+	}()
+
+	if err := smokeWhoElse(ctx, sess, seats); err != nil {
+		return err
+	}
+
+	if err := smokePosts(ctx, sess, huddleID, designer.Key, implementor.Key); err != nil {
+		return err
+	}
+
+	if err := smokeRead(ctx, sess, designer.Key); err != nil {
+		return err
+	}
+
+	if err := smokeClose(ctx, sess, huddleID); err != nil {
+		return err
+	}
+
+	closeOnDefer = false
+
+	return nil
+}
+
+func smokeCreate(ctx context.Context, sess *mcp.ClientSession) (map[string]any, error) {
 	step("huddle.create (designer + implementor)")
 	// Note: purpose deliberately does not include the word "smoke" — the
 	// channel name is "<prefix>-<slug>-<short id>", and the configured
@@ -83,39 +149,13 @@ func run() error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("huddle.create: %w", err)
+		return nil, fmt.Errorf("huddle.create: %w", err)
 	}
 	dump(createRes)
+	return createRes, nil
+}
 
-	huddleID, _ := createRes["huddleId"].(string)
-	seats := extractSeats(createRes)
-	if huddleID == "" || len(seats) != 2 {
-		return fmt.Errorf("create result missing huddleId or seats: %+v", createRes)
-	}
-	if got := orchestratorID(createRes); got != "michael" {
-		return fmt.Errorf("create result orchestrator.id mismatch: got %q, want %q", got, "michael")
-	}
-	designer, implementor := seats[0], seats[1]
-	huddleIDShort := huddleID
-	if len(huddleIDShort) > 16 {
-		huddleIDShort = huddleIDShort[:16] + "..."
-	}
-	fmt.Printf("    huddle %s, channel %v\n", huddleIDShort, createRes["channel"])
-
-	// At this point a real Slack channel exists. Try to archive it on any
-	// later failure so we don't leak public channels into the workspace.
-	closeOnDefer := true
-	defer func() {
-		if !closeOnDefer {
-			return
-		}
-		cctx, ccancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer ccancel()
-		if _, cerr := callJSON(cctx, sess, "huddle.close", map[string]any{"huddleId": huddleID}); cerr != nil {
-			fmt.Fprintf(os.Stderr, "WARN: deferred huddle.close failed: %v\n", cerr)
-		}
-	}()
-
+func smokeWhoElse(ctx context.Context, sess *mcp.ClientSession, seats []smokeSeat) error {
 	for _, s := range seats {
 		step(fmt.Sprintf("huddle.who_else (%s)", s.ID))
 		res, err := callJSON(ctx, sess, "huddle.who_else", map[string]any{"key": s.Key})
@@ -127,7 +167,10 @@ func run() error {
 		}
 		dump(res)
 	}
+	return nil
+}
 
+func smokePosts(ctx context.Context, sess *mcp.ClientSession, huddleID, designerKey, implementorKey string) error {
 	posts := []struct {
 		label string
 		args  map[string]any
@@ -137,11 +180,11 @@ func run() error {
 			"body":     "kickoff: designer + implementor pairing on the search filter pill. who's driving what?",
 		}},
 		{"designer", map[string]any{
-			"key":  designer.Key,
+			"key":  designerKey,
 			"body": "i'll mock the sticky pill above the results list and share a screenshot in a few",
 		}},
 		{"implementor", map[string]any{
-			"key":  implementor.Key,
+			"key":  implementorKey,
 			"body": "works for me — once the mock lands i can wire it into the existing filter state",
 		}},
 	}
@@ -153,26 +196,38 @@ func run() error {
 		}
 		dump(res)
 	}
+	return nil
+}
 
+func smokeRead(ctx context.Context, sess *mcp.ClientSession, designerKey string) error {
 	step("huddle.read (designer perspective, limit 20)")
 	readRes, err := callJSON(ctx, sess, "huddle.read", map[string]any{
-		"key":   designer.Key,
+		"key":   designerKey,
 		"limit": 20,
 	})
 	if err != nil {
 		return fmt.Errorf("read: %w", err)
 	}
 	dump(readRes)
+	return nil
+}
 
+func smokeClose(ctx context.Context, sess *mcp.ClientSession, huddleID string) error {
 	step("huddle.close")
 	closeRes, err := callJSON(ctx, sess, "huddle.close", map[string]any{"huddleId": huddleID})
 	if err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
 	dump(closeRes)
-	closeOnDefer = false
-
 	return nil
+}
+
+func logCreated(huddleID string, channel any) {
+	huddleIDShort := huddleID
+	if len(huddleIDShort) > 16 {
+		huddleIDShort = huddleIDShort[:16] + "..."
+	}
+	fmt.Printf("    huddle %s, channel %v\n", huddleIDShort, channel)
 }
 
 func callJSON(ctx context.Context, sess *mcp.ClientSession, name string, args map[string]any) (map[string]any, error) {
@@ -181,13 +236,13 @@ func callJSON(ctx context.Context, sess *mcp.ClientSession, name string, args ma
 		return nil, err
 	}
 	if res.IsError {
-		var msg string
+		var b strings.Builder
 		for _, c := range res.Content {
 			if tc, ok := c.(*mcp.TextContent); ok {
-				msg += tc.Text
+				b.WriteString(tc.Text)
 			}
 		}
-		return nil, fmt.Errorf("tool returned error: %s", msg)
+		return nil, fmt.Errorf("tool returned error: %s", b.String())
 	}
 	if res.StructuredContent == nil {
 		return map[string]any{}, nil
@@ -234,6 +289,30 @@ func asString(v any) string {
 func orchestratorID(m map[string]any) string {
 	orch, _ := m["orchestrator"].(map[string]any)
 	return asString(orch["id"])
+}
+
+// envWithOverrides returns base with any keys present in overrides removed,
+// followed by the overrides as KEY=value entries. Naive append(os.Environ(),
+// "KEY=val") leaves the parent's KEY=... entry intact; on Linux getenv
+// returns the first match, so the override is silently ignored. Filtering
+// the keys out of base first makes the override actually apply.
+func envWithOverrides(base []string, overrides map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, kv := range base {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			out = append(out, kv)
+			continue
+		}
+		if _, skip := overrides[kv[:eq]]; skip {
+			continue
+		}
+		out = append(out, kv)
+	}
+	for k, v := range overrides {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 func step(name string) {

@@ -30,9 +30,14 @@ func main() {
 	// huddle.create call through the harness. Pointer fields (TTLHours,
 	// ListArgs.Active, ReadArgs.Since) still publish `["null", "T"]`, but
 	// they're all optional — clients just omit them.
+	// Only set the env if the operator hasn't already configured it, so a
+	// caller running with a custom JSONSCHEMAGODEBUG (e.g. for unrelated
+	// debugging) isn't silently clobbered.
 	// TODO: replace with explicit InputSchema overrides per tool when we're
 	// willing to maintain hand-rolled schemas.
-	_ = os.Setenv("JSONSCHEMAGODEBUG", "typeschemasnull=1")
+	if os.Getenv("JSONSCHEMAGODEBUG") == "" {
+		_ = os.Setenv("JSONSCHEMAGODEBUG", "typeschemasnull=1")
+	}
 	os.Exit(run(os.Args))
 }
 

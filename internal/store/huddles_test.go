@@ -76,6 +76,33 @@ func TestHuddlesCRUD_Memory(t *testing.T) {
 	require.Equal(t, huddleerr.ErrHuddleNotFound, st.MarkClosed(ctx, "nosuch", time.Now()))
 }
 
+// TestInsertHuddleDefaultsEmptyOrchestratorFields verifies that callers
+// who build a types.Huddle without setting orchestrator fields can't
+// accidentally persist empty strings — the store layer normalizes them
+// to the documented sentinel before insert, matching the schema DEFAULT.
+func TestInsertHuddleDefaultsEmptyOrchestratorFields(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, st.Close()) })
+
+	now := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+	require.NoError(t, st.InsertHuddle(ctx, types.Huddle{
+		ID:               "hud_empty",
+		Purpose:          "no orchestrator fields supplied",
+		SlackChannelID:   "C-empty",
+		SlackChannelName: "h-empty",
+		CreatedAt:        now,
+	}))
+
+	got, err := st.LookupHuddle(ctx, "hud_empty")
+	require.NoError(t, err)
+	require.Equal(t, DefaultOrchestratorID, got.OrchestratorID)
+	require.Equal(t, DefaultOrchestratorDisplayName, got.OrchestratorDisplayName)
+}
+
 func TestHuddlesOnDisk_IdempotentSchema(t *testing.T) {
 	t.Parallel()
 
