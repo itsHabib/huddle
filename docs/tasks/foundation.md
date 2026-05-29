@@ -73,7 +73,7 @@ Interface separation so handlers can test against a fake.
 
 ### 5. Config + errors + types (`internal/{config,errors,types}/`)
 
-- `config/config.go` — env loading per design doc § Configuration. Required: `HUDDLE_SLACK_BOT_TOKEN`. Optional with defaults: `HUDDLE_STATE_DIR` (default `./.huddle-state`), `HUDDLE_LOG_LEVEL` (default `info`), `HUDDLE_CHANNEL_PREFIX` (default `huddle-`). Validation returns a typed error; main exits with a clear message on missing required vars.
+- `config/config.go` — env loading per design doc § Configuration. Required: `HUDDLE_SLACK_BOT_TOKEN`. Optional with defaults: `HUDDLE_STATE_DIR` (default `.huddle`), `HUDDLE_LOG_LEVEL` (default `info`), `HUDDLE_CHANNEL_PREFIX` (default `huddle-`). Validation returns a typed error; main exits with a clear message on missing required vars.
 - `errors/errors.go` — typed errors:
   - `ErrKeyInvalid`, `ErrHuddleNotFound`, `ErrHuddleClosed`, `ErrSlackRateLimited`, `ErrSlackMissingScope`, `ErrStorageFailure`.
   - Helper `MCPError(code, err) *mcp.CallToolResult` mapping to `-32602` / `-32603` per design doc § Error handling.

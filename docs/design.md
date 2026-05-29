@@ -359,7 +359,7 @@ CREATE INDEX IF NOT EXISTS idx_keys_huddle  ON keys(huddle_id);
 CREATE INDEX IF NOT EXISTS idx_keys_active  ON keys(key) WHERE revoked_at IS NULL;
 ```
 
-DB location: `${HUDDLE_STATE_DIR:-./.huddle-state}/huddle.sqlite` (the code default). The canonical deployment sets `HUDDLE_STATE_DIR` to an absolute path in the MCP server config.
+DB location: `${HUDDLE_STATE_DIR:-.huddle}/huddle.sqlite` (the code default, in the working directory). Override `HUDDLE_STATE_DIR` to relocate it; the canonical deployment pins an absolute path in the MCP server config.
 
 Migrations: schema file applied idempotently at startup via `CREATE ... IF NOT EXISTS`. No migration tool for v0; if schema evolves, write `0002_*.sql` files and an applied-migrations table.
 
@@ -370,7 +370,7 @@ Env vars loaded by `internal/config/config.go`:
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `HUDDLE_SLACK_BOT_TOKEN` | per-verb | — | Slack bot token (`xoxb-...`). Required for `huddle.create` / `.close` / `.post` / `.read`. `huddle.who_else` is local-only and works without it; the server boots regardless. |
-| `HUDDLE_STATE_DIR` | no | `./.huddle-state` | Where `huddle.sqlite` lives |
+| `HUDDLE_STATE_DIR` | no | `.huddle` | Where `huddle.sqlite` lives (in cwd unless overridden) |
 | `HUDDLE_LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error` |
 | `HUDDLE_CHANNEL_PREFIX` | no | `huddle-` | Prefix for created Slack channels |
 | `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` | no | — | If set, auto-invites this Slack user (`U…`) to every channel `huddle.create` opens. Best-effort: invite failure is logged, not propagated. |

@@ -32,7 +32,7 @@ Set the Slack token (plus any optional overrides), then start the stdio MCP serv
 
 ```sh
 export HUDDLE_SLACK_BOT_TOKEN=xoxb-...          # required for create/close/post/read
-export HUDDLE_STATE_DIR=~/.huddle               # optional; default ./.huddle-state
+export HUDDLE_STATE_DIR=~/.huddle               # optional; default .huddle (in cwd)
 export HUDDLE_ORCHESTRATOR_SLACK_USER_ID=U...   # optional; auto-invite operator to new channels
 
 make run   # same as go run ./cmd/huddle

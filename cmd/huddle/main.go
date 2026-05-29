@@ -115,11 +115,6 @@ func logStoreReady(log *slog.Logger, st *store.Store) {
 		slog.Int("active_huddles", len(active)),
 	)
 
-	if os.Getenv("HUDDLE_STATE_DIR") == "" {
-		log.Warn("HUDDLE_STATE_DIR is not set; resolved from the working directory — set it explicitly to avoid opening the wrong state dir",
-			slog.String("resolved_state_dir", st.StateDir()))
-	}
-
 	if st.CreatedFreshDB() {
 		log.Warn("opened a brand-new empty huddle database; if you expected existing huddles, HUDDLE_STATE_DIR is likely pointing at the wrong directory",
 			slog.String("state_dir", st.StateDir()))
