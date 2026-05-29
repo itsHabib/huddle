@@ -359,7 +359,7 @@ CREATE INDEX IF NOT EXISTS idx_keys_huddle  ON keys(huddle_id);
 CREATE INDEX IF NOT EXISTS idx_keys_active  ON keys(key) WHERE revoked_at IS NULL;
 ```
 
-DB location: `${HUDDLE_STATE_DIR:-pers/huddle-state}/huddle.sqlite`.
+DB location: `${HUDDLE_STATE_DIR:-./.huddle-state}/huddle.sqlite` (the code default). The canonical deployment sets `HUDDLE_STATE_DIR` to an absolute path in the MCP server config.
 
 Migrations: schema file applied idempotently at startup via `CREATE ... IF NOT EXISTS`. No migration tool for v0; if schema evolves, write `0002_*.sql` files and an applied-migrations table.
 

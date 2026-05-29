@@ -23,7 +23,10 @@ var schemaSQL string
 
 // Store wraps SQLite access with small domain helpers.
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	stateDir string // resolved absolute state directory
+	dbPath   string // resolved absolute path to huddle.sqlite
+	freshDB  bool   // New created a brand-new empty database file
 }
 
 // sqliteDSN converts a filesystem path into a SQLite DSN understood by modernc.org/sqlite.
@@ -46,12 +49,23 @@ func New(stateDir string) (*Store, error) {
 		return nil, absErr
 	}
 
+	absStateDir, absDirErr := filepath.Abs(stateDir)
+	if absDirErr != nil {
+		return nil, absDirErr
+	}
+
+	// MkdirAll above created only the directory, not the DB file, so an absent
+	// file here means we're about to create a brand-new database. A fresh DB
+	// alongside zero huddles is the classic sign HUDDLE_STATE_DIR is wrong.
+	_, statErr := os.Stat(absPath)
+	freshDB := os.IsNotExist(statErr)
+
 	db, err := sql.Open("sqlite", sqliteDSN(absPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	s := &Store{db: db}
+	s := &Store{db: db, stateDir: absStateDir, dbPath: absPath, freshDB: freshDB}
 	if err = s.ApplySchema(context.Background()); err != nil {
 		closeErr := s.Close()
 
@@ -144,4 +158,21 @@ func (s *Store) Close() error {
 	s.db = nil
 
 	return err
+}
+
+// StateDir returns the resolved absolute state directory backing this store.
+func (s *Store) StateDir() string {
+	return s.stateDir
+}
+
+// DBPath returns the resolved absolute path to the SQLite database file.
+func (s *Store) DBPath() string {
+	return s.dbPath
+}
+
+// CreatedFreshDB reports whether New created a brand-new empty database (no
+// huddle.sqlite existed at the resolved path). A true value together with zero
+// existing huddles is the classic sign HUDDLE_STATE_DIR points at the wrong dir.
+func (s *Store) CreatedFreshDB() bool {
+	return s.freshDB
 }

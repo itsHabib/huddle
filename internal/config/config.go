@@ -39,6 +39,10 @@ type Config struct {
 func Load() (Config, error) {
 	token := strings.TrimSpace(os.Getenv(envSlackBotToken))
 
+	// HUDDLE_STATE_DIR should be set explicitly (the MCP server config does this)
+	// and pinned to one absolute path. When unset we fall back to defaultStateDir,
+	// which is resolved against the process working directory at store.New time —
+	// cmd/huddle warns when this happens so a wrong directory is never silent.
 	stateDir := strings.TrimSpace(os.Getenv(envStateDir))
 	if stateDir == "" {
 		stateDir = defaultStateDir

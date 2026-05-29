@@ -73,6 +73,8 @@ func run(args []string) int {
 		}
 	}()
 
+	logStoreReady(log, st)
+
 	slackAdapter := slack.NewAdapter(cfg)
 	deps := server.Deps{
 		Slack: slackAdapter,
@@ -95,4 +97,31 @@ func run(args []string) int {
 	}
 
 	return 0
+}
+
+// logStoreReady records the resolved state directory and DB path at startup so a
+// misconfigured HUDDLE_STATE_DIR (e.g. a stale MCP process pointed at the wrong
+// dir) is obvious instead of silent. It also warns on the two telltales: an unset
+// env var (path resolved from cwd) and a brand-new empty database.
+func logStoreReady(log *slog.Logger, st *store.Store) {
+	active, err := st.ListHuddles(context.Background(), true)
+	if err != nil {
+		log.Warn("count active huddles at startup", slog.String("error", err.Error()))
+	}
+
+	log.Info("store ready",
+		slog.String("state_dir", st.StateDir()),
+		slog.String("db_path", st.DBPath()),
+		slog.Int("active_huddles", len(active)),
+	)
+
+	if os.Getenv("HUDDLE_STATE_DIR") == "" {
+		log.Warn("HUDDLE_STATE_DIR is not set; resolved from the working directory — set it explicitly to avoid opening the wrong state dir",
+			slog.String("resolved_state_dir", st.StateDir()))
+	}
+
+	if st.CreatedFreshDB() {
+		log.Warn("opened a brand-new empty huddle database; if you expected existing huddles, HUDDLE_STATE_DIR is likely pointing at the wrong directory",
+			slog.String("state_dir", st.StateDir()))
+	}
 }
