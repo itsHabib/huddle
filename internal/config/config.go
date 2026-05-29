@@ -15,7 +15,7 @@ const (
 	envLogLevel                = "HUDDLE_LOG_LEVEL"
 	envChannelPrefix           = "HUDDLE_CHANNEL_PREFIX"
 	envOrchestratorSlackUserID = "HUDDLE_ORCHESTRATOR_SLACK_USER_ID"
-	defaultStateDir            = "./.huddle-state"
+	defaultStateDir            = ".huddle"
 	defaultLogLevel            = "info"
 	defaultChanPrefix          = "huddle-"
 )
@@ -39,6 +39,10 @@ type Config struct {
 func Load() (Config, error) {
 	token := strings.TrimSpace(os.Getenv(envSlackBotToken))
 
+	// State dir defaults to .huddle in the working directory; set HUDDLE_STATE_DIR
+	// to override (the MCP server config pins an absolute path). The default is
+	// resolved against cwd at store.New time, and cmd/huddle logs the resolved
+	// absolute path at startup so the location is never a mystery.
 	stateDir := strings.TrimSpace(os.Getenv(envStateDir))
 	if stateDir == "" {
 		stateDir = defaultStateDir

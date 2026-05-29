@@ -12,6 +12,7 @@
 /bin/
 
 # Local state
+.huddle/
 .huddle-state/
 *.sqlite
 *.sqlite-journal
