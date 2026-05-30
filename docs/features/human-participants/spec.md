@@ -2,7 +2,7 @@
 
 **Status:** draft / proposal — NOT a build commitment. The artifact we decide from.
 **Owner:** @itsHabib
-**Date:** 2026-05-30 (v2 — cycle-1 review revision)
+**Date:** 2026-05-30 (v3 — cycle-2 review revision; design lock candidate)
 **Related:** [`docs/design.md`](../../design.md), [`README.md`](../../../README.md), [`internal/slack/encoding.go`](../../../internal/slack/encoding.go), [`internal/slack/messages.go`](../../../internal/slack/messages.go), [`internal/types/types.go`](../../../internal/types/types.go)
 
 > **Reviewers — focus areas (v2):**
@@ -10,6 +10,9 @@
 > - **§7.4 — where the new logic actually lands.** `internal/slack/messages.go::mapConversationMessages` (which has the raw `slack_user_id`), NOT `encoding.go::Decode` (which only sees text). Reviewers of v1 caught the layer error — confirm v2 places it correctly.
 > - **§4 D3 (revised)** — handle support dropped to v0.2; v1 supports user ID + email only. Confirm.
 > - **§7.3 (revised)** — filter is `{bot, orchestrator}`, not `{bot, seats}`. Seats aren't channel members.
+
+> **What changed from v2 (cycle-2 review):**
+> Cycle-2 surfaced five blockers, all small and mechanical. Resolutions: (a) §3 file count 7 → 8 — `invite.go` is the 8th. (b) §6 + §7.4: `cfg.OrchestratorSlackUserID` reference in v2's `mapConversationMessages` pseudocode crossed the `slack` → `config` package boundary. v3 stores the orchestrator user ID on `slackGoAdapter` (parallel to `botUserID` from D7) — `cmd/huddle/main.go` passes both at construction; the slack package never imports `config`. (c) §7.1: human invite failures are now best-effort and land in `Skipped{Reason: invite_failed}`, matching the existing `inviteOrchestrator` pattern in `create.go` and resolving the v2 compensation contradiction. (d) §7.3: a `ListChannelMembers` `ErrNoToken` no longer fails `who_else` — it degrades to `{seats, orchestrator, humans: []}`, preserving the tokenless `huddle.who_else` operation shipped in PR #19. (e) §6 + Phase 1 task list now include `ErrRateLimited` (introduced in §7.5 but absent from the contract in v2). Should-fixes also folded in: §7.3's "per D5" cross-reference points at §7.4 (its actual home); §7.4 names the orchestrator-direct + `LookupUser`-failure case as accept-it ("user-Uxxxxx"); §7.3 deactivated filter simplified to just `Deactivated == true`; D3 regex notes `W...` enterprise grid IDs as a follow-up; §7.4 documents the orchestrator-via-`huddle.post`-vs-direct-Slack display name inconsistency as a known v1 gap.
 
 > **What changed from v1 (cycle-1 review):**
 > Cycle-1 review caught seven blockers and four should-fixes. The big ones: (a) §7.4 misdescribed the existing decoder — `encoding.go::Decode` already returns `IdentityKindHuman` for fallthrough and `messages.go::mapConversationMessages` already sets `"user-" + rawUser`, so the change is a *replacement of the synthetic-name path*, not a new branch in `Decode`. (b) The new logic needs the raw Slack user ID, which `Decode` doesn't have — it lives in `mapConversationMessages`. (c) The bot user ID was used dispositively in v1 with no source defined; v2 adds D7 to fix. (d) `who_else`'s "drop seats from channel members" was a no-op (seats post via the bot and aren't channel members at all); v2's filter is `{bot, orchestrator}`. (e) Resolver ordering misrouted `@handle` to email; v2 drops handle support entirely for v1. (f) Email path requires `users:read.email` scope; called out in §2. (g) Type snippets in §6 didn't match actual `types.go`; v2 matches.
@@ -63,7 +66,7 @@ The bet: with that asymmetry, humans require *zero* huddle-side persistence. The
 
 ## 3. Architecture overview
 
-The change is additive across **seven files**:
+The change is additive across **eight files** (one new: `internal/handlers/invite.go`):
 
 ```
 internal/types/types.go          — Human, UserInfo, ErrUserNotFound; small extensions to WhoElseResult/CreateArgs/CreateResult/InviteHumanArgs/InviteHumanResult
@@ -91,13 +94,14 @@ huddle.who_else                 ──► conversations.members  (Slack)
                                        ├─ drop orchestrator (cfg.OrchestratorSlackUserID, if configured)
                                        └─► users.info × N (cached + singleflight) ──► humans[]
 
-huddle.read (mapConversationMessages)
+huddle.read (mapConversationMessages — adapter-owned)
                                        │ for each message:
                                        │   1) Decode(text) → kind, displayName
                                        │   2) if Kind == human && rawUser != "":
-                                       │      • if rawUser == orchestratorSlackUserID → kind = orchestrator
+                                       │      • if rawUser == adapter.orchestratorSlackUserID → kind = orchestrator
                                        │      • else → LookupUser(rawUser) (cached) → use display_name
-                                       │      • on lookup failure → "user-" + rawUser (existing fallback)
+                                       │      • on lookup failure → "user-" + rawUser (existing fallback;
+                                       │        applies to the orchestrator-direct branch too — see §7.4)
 ```
 
 ## 4. Key decisions & trade-offs
@@ -133,7 +137,7 @@ For v1 we drop handle support entirely. Operator passes user IDs (`U…`) or ema
 
 The resolver in `Adapter.LookupUser(ctx, ref) (UserInfo, error)`:
 
-- Matches `^U[A-Z0-9]{8,}$` → user ID, pass through to `users.info`.
+- Matches `^U[A-Z0-9]{8,}$` → user ID, pass through to `users.info`. (TODO: Slack Enterprise Grid workspaces use `W`-prefixed user IDs. The implementation should leave a comment on the regex flagging this as a known limitation; relax to `^[UW][A-Z0-9]{8,}$` in v0.2 if anyone hits it.)
 - Contains `@` → email, `users.lookupByEmail` (requires `users:read.email` scope — see §2).
 - Otherwise → `slack.ErrInvalidUserRef` (caller appends to `Skipped`).
 
@@ -172,17 +176,34 @@ The "channel membership is truth" model is symmetric: adding a human is `convers
 
 **Alternative considered:** symmetric `remove_human` verb. Rejected for v1 — adds API surface for a flow that almost never matters. If it does, we add it in v0.2.
 
-### D7 — Bot user ID source (NEW, cycle-1 fix)
+### D7 — Bot user ID + orchestrator user ID stored on the adapter
 
-**Chosen: `auth.test` at adapter construction; cache on `slackGoAdapter`.**
+**Chosen: both captured at `NewAdapter` construction time. The slack package never imports `config`.**
 
-Cycle-1 review caught that v1 used `bot_user_id` in the decoder (§7.4) and `who_else` filter (§7.3) without specifying where it comes from. Nothing in the codebase today exposes it.
+Cycle-1 review caught that v1 used `bot_user_id` in the decoder (§7.4) and `who_else` filter (§7.3) without specifying where it comes from. Cycle-2 caught the same problem for `cfg.OrchestratorSlackUserID` — v2's `mapConversationMessages` pseudocode referenced it directly, which would force `internal/slack` to import `internal/config`. That's the wrong layering: the slack package depends only on `types` and `slack-go`. v3 fixes both with the same shape.
 
-`slackGoAdapter` calls `auth.test` once at construction (i.e. in `NewAdapter`) and caches the returned `user_id` on the struct. `Adapter.BotUserID() string` exposes it. If `auth.test` fails at construction, `NewAdapter` returns the existing `noTokenAdapter` (see `slack/impl.go`'s tokenless path) — same shape as the no-token case, since a token that doesn't authenticate is effectively no token.
+`slackGoAdapter` captures two identifiers at construction:
+
+- `botUserID string` — populated by calling `auth.test` once in `NewAdapter`.
+- `orchestratorSlackUserID string` — passed in by the caller (`cmd/huddle/main.go`), read from `cfg.OrchestratorSlackUserID`. May be empty when the env var is unset.
+
+`Adapter.BotUserID() string` exposes the bot ID. The orchestrator ID is internal to the adapter — used by `History` / `mapConversationMessages` for the reclassification branch in §7.4 — and doesn't need a public accessor.
+
+`NewAdapter`'s signature thus becomes:
+
+```go
+func NewAdapter(cfg config.Config) Adapter
+```
+
+(unchanged — it already takes `cfg`; v3 just uses two fields of it). `cmd/huddle/main.go` passes the full `cfg` to `NewAdapter` exactly as today.
+
+If `auth.test` fails at construction, `NewAdapter` returns the existing `noTokenAdapter` (see `slack/impl.go`'s tokenless path) — same shape as the no-token case, since a token that doesn't authenticate is effectively no token. In that path, `BotUserID()` returns `""` and `History`/`mapConversationMessages` skip the reclassification branch — see §7.3's tokenless-degradation handling.
 
 **Token rotation:** if the operator rotates the bot token mid-process, the cached user ID is now stale. Decoder + `who_else` could misclassify. Acceptable v1 behavior: document "restart on bot token rotation"; the noTokenAdapter path will catch rotations that invalidate the token, but rotations that re-bind to a different bot user (rare) require restart. Future: re-call `auth.test` on Slack auth-error responses.
 
 **Alternative considered:** `HUDDLE_BOT_SLACK_USER_ID` env var. Rejected — error-prone (operator copies it wrong, drift on token rotation is silent). `auth.test` is one tier-2 call at startup; cheap.
+
+**Alternative considered (v3 cycle-2):** thread `orchestratorSlackUserID` through `Adapter.History`'s argument list (`History(ctx, channelID, since, limit, orchestratorSlackUserID string)`). Rejected — handler-side smell, leaks orchestrator concept into a generic history-fetch method, breaks the adapter's existing contract. Storing on the adapter struct is cleaner.
 
 ## 5. Data model
 
@@ -196,9 +217,10 @@ type slackGoAdapter struct {
     client       *slackapi.Client
 
     // new fields
-    botUserID    string          // populated by auth.test at construction
-    userCache    *userCache      // keyed by Slack user ID
-    lookupGroup  singleflight.Group  // dedupe concurrent LookupUser per user ID
+    botUserID               string             // populated by auth.test at construction
+    orchestratorSlackUserID string             // from cfg.OrchestratorSlackUserID at construction; may be ""
+    userCache               *userCache         // keyed by Slack user ID
+    lookupGroup             singleflight.Group // dedupe concurrent LookupUser per user ID
 }
 
 type userCache struct {
@@ -318,6 +340,7 @@ const (
     SkippedReasonUnknownUser       SkippedReason = "unknown_user"
     SkippedReasonInvalidRef        SkippedReason = "invalid_ref"
     SkippedReasonMissingEmailScope SkippedReason = "missing_email_scope"  // users:read.email not granted
+    SkippedReasonInviteFailed      SkippedReason = "invite_failed"        // §7.1: conversations.invite returned an error other than already_in_channel
 )
 ```
 
@@ -353,6 +376,7 @@ var (
     ErrInvalidUserRef     = errors.New("ref is not a Slack user ID or email")
     ErrUserNotFound       = errors.New("user not found")
     ErrMissingEmailScope  = errors.New("users:read.email scope is not granted")  // surfaced from users.lookupByEmail "missing_scope"
+    ErrRateLimited        = errors.New("slack returned Retry-After")              // §7.5; consumer decides degrade-vs-fail
 )
 ```
 
@@ -362,17 +386,20 @@ Handlers translate to `MCPError(CodeInvalidParams, ...)` or append to `SkippedHu
 
 ### 7.1 `huddle.create { humans: ["U0ABC", "joe@company.com"] }`
 
-1. Existing create flow runs to channel creation + huddle row insert.
-2. For each ref in `humans`: `Adapter.LookupUser(ref)`. On `ErrInvalidUserRef` / `ErrUserNotFound` / `ErrMissingEmailScope`: append to `Skipped`, continue.
-3. For each successfully resolved user ID: `Adapter.InviteUserToChannel(channelID, userID)`. Treat `already_in_channel` as `Skipped{Reason: AlreadyInChannel}` and continue (same idempotent pattern as orchestrator invite). Other errors → fail the verb with `CodeInternalError` (consistent with create's existing failure model).
-4. `CreateResult.Humans` = successfully invited; `CreateResult.Skipped` = the skip list (may be empty).
+1. Existing create flow runs to channel creation + huddle row insert + seat keys (i.e. `executeCreate` runs to completion as today; humans are added *after* the existing flow, never before).
+2. For each ref in `humans`: `Adapter.LookupUser(ref)`. On `ErrInvalidUserRef` / `ErrUserNotFound` / `ErrMissingEmailScope`: append to `Skipped` with the matching `SkippedReason`, continue.
+3. For each successfully resolved user ID: `Adapter.InviteUserToChannel(channelID, userID)`. Behavior matches the existing `inviteOrchestrator` pattern in `create.go` — **best-effort, never fail the verb**:
+   - `already_in_channel` → `Skipped{Reason: AlreadyInChannel}`, continue.
+   - Other Slack errors → `Skipped{Reason: InviteFailed}` + warn log, continue.
+   - Success → append to `Invited`.
+4. `CreateResult.Humans` = successfully invited; `CreateResult.Skipped` = the skip list (may be empty). The verb returns `200 OK` even when `Invited` is empty — same shape as `huddle.invite_human`.
 
-Compensation: if `huddle.create` fails *after* humans are invited but *before* the huddle row is committed, the existing compensation path archives the channel — humans get auto-removed via channel archive. No separate human-cleanup needed.
+There's no compensation path for human invites — they happen post-commit and are best-effort by design. If `huddle.create`'s pre-commit flow fails (the existing channel-create / huddle-row-insert / seat-key-insert path) the existing compensation runs as today; human invites never started, so nothing to clean up. The v2 spec contained a contradictory compensation note ("archive channel if humans invited but huddle row not committed") which was unreachable given the ordering — v3 removes it.
 
 ### 7.2 `huddle.invite_human { huddleId, humans }`
 
 1. `Store.LookupHuddle(huddleId)` → if not found, return `CodeInvalidParams`.
-2. For each ref: same resolver + invite path as §7.1. Build `Invited` / `Skipped`.
+2. For each ref: same resolver + invite path as §7.1 (including best-effort invite semantics — `InviteFailed` → `Skipped`, never fails the verb). Build `Invited` / `Skipped`.
 3. Return `{Invited, Skipped}`. Empty `Invited` with non-empty `Skipped` is a normal return (not an error).
 
 No DB write at any point.
@@ -380,12 +407,14 @@ No DB write at any point.
 ### 7.3 `huddle.who_else { key }`
 
 1. Existing lookup: key → seat → huddle.
-2. `Adapter.ListChannelMembers(huddle.SlackChannelID)` → `[U…]`. If error → `CodeInternalError`; the verb can't answer without it.
-3. Filter:
+2. `Adapter.ListChannelMembers(huddle.SlackChannelID)` → `[U…]`. Error handling:
+   - `slack.ErrNoToken` → **graceful degrade**: return `{purpose, orchestrator, seats, humans: []}`. Preserves the tokenless-`huddle.who_else` operation shipped in PR #19 (`internal/slack/impl.go`'s `noTokenAdapter` returns `ErrNoToken` from every adapter method including the new `ListChannelMembers`). `huddle.who_else` continues to work as a local-only verb when the operator hasn't set `HUDDLE_SLACK_BOT_TOKEN` — the human-discovery feature simply isn't available in that mode, which is exactly the expected v0.2-and-later behavior anyway.
+   - `slack.ErrRateLimited` or other Slack errors → `CodeInternalError`. With a real token, the verb has nothing useful to say about humans without channel membership.
+3. Filter (skipped when step 2 degraded):
    - Drop `Adapter.BotUserID()`.
-   - Drop `cfg.OrchestratorSlackUserID` if non-empty (it's an optional config — if unset, the orchestrator won't be filtered here and will fall through into `humans` per D5). The orchestrator is reported in the existing `orchestrator` field of `WhoElseResult` regardless.
+   - Drop `adapter.orchestratorSlackUserID` if non-empty (stored on the adapter per D7 — never `cfg.` reference here, since `internal/slack` doesn't import `internal/config`). If empty, the orchestrator isn't filtered here and will appear in `humans[]` — per §7.4's unset-env behavior. The orchestrator is reported in the existing `orchestrator` field of `WhoElseResult` regardless.
    - **Don't filter seats** — seats post via the bot and never appear in `conversations.members` as individual users. The v1 spec's "seat owners" filter was a no-op; v2 removes that step.
-4. For each remaining user ID: `Adapter.LookupUser(userID)`. Drop entries where `UserInfo.IsBot == true` (e.g., other Slack apps in the channel). Drop entries where `Deactivated == true` AND we never see them post (acceptable to omit a kicked-and-deleted user from the live participants view; their messages still decode per §7.4).
+4. For each remaining user ID: `Adapter.LookupUser(userID)`. Drop entries where `UserInfo.IsBot == true` (e.g., other Slack apps in the channel). Drop entries where `Deactivated == true` — a deactivated user being a current channel member is a Slack edge case and the simpler rule is "deactivated users are not live participants." (v2 had an extra "AND we never see them post" qualifier; that would require a `conversations.history` join out of scope for this verb. v3 simplifies.)
 5. Result: `{purpose, orchestrator, seats: [...], humans: [...]}`.
 
 ### 7.4 `huddle.read` decoder — where the new logic lives
@@ -397,24 +426,36 @@ This is the most important rewrite from v1. The cycle-1 review correctly noted t
 - `internal/slack/encoding.go::Decode(text)` returns `Identity{Kind: IdentityKindSeat | IdentityKindOrchestrator | IdentityKindHuman | IdentityKindUnknown}`, prefix-based, and only sees text.
 - `internal/slack/messages.go::mapConversationMessages` calls `Decode(msg.Text)`, then for messages where `identity.Kind == IdentityKindHuman && rawUser != ""`, sets `dup.DisplayName = "user-" + rawUser`. The raw user ID is available HERE.
 
-**v2 change: enrich `mapConversationMessages`, not `Decode`.**
+**v2/v3 change: enrich `mapConversationMessages`, not `Decode`. Function moves from package-level to a method on `slackGoAdapter` so it can reach the cached orchestrator user ID and call `LookupUser` directly.**
+
+`mapConversationMessages` becomes a method on `slackGoAdapter`:
 
 ```go
-// internal/slack/messages.go::mapConversationMessages — modified branch
+// internal/slack/messages.go — signature changes from package-level fn to method:
+//   was: func mapConversationMessages(messages []slackapi.Message) ([]types.Message, error)
+//   now: func (a *slackGoAdapter) mapConversationMessages(ctx context.Context, messages []slackapi.Message) ([]types.Message, error)
+//
+// History (the only caller today) is itself an adapter method, so this is a
+// one-line callsite change: msgs, err := a.mapConversationMessages(ctx, resp.Messages)
+
 identity, body := Decode(msg.Text)
 if identity.Kind == types.IdentityKindHuman && rawUser != "" {
-    // (A) Orchestrator-via-Slack-direct: if the configured orchestrator
+    // (A) Orchestrator-via-Slack-direct: if the cached orchestrator
     //     Slack user ID matches, surface as orchestrator (not human).
-    //     When the env var is unset, the configured ID is empty string;
-    //     the check is a no-op and the orchestrator's direct posts fall
-    //     through to (B) and decode as human (best-effort).
-    if cfg.OrchestratorSlackUserID != "" && rawUser == cfg.OrchestratorSlackUserID {
+    //     When HUDDLE_ORCHESTRATOR_SLACK_USER_ID is unset, the cached
+    //     value is "" and this check is a no-op — orchestrator direct
+    //     posts fall through to (B) and decode as human (best-effort).
+    //
+    //     This uses a.orchestratorSlackUserID — the cached value stored
+    //     on the adapter at construction (D7). The slack package does
+    //     NOT import internal/config; the value comes in via NewAdapter.
+    if a.orchestratorSlackUserID != "" && rawUser == a.orchestratorSlackUserID {
         identity.Kind = types.IdentityKindOrchestrator
         // display name resolution: try LookupUser, fall back below
     }
 
     // (B) Enrich the display name via users.info.
-    info, err := adapter.LookupUser(ctx, rawUser)
+    info, err := a.LookupUser(ctx, rawUser)
     if err == nil && info.DisplayName != "" {
         identity.DisplayName = info.DisplayName
     } else {
@@ -425,7 +466,11 @@ if identity.Kind == types.IdentityKindHuman && rawUser != "" {
 }
 ```
 
-`Decode` itself does not change — bot posts still decode via the existing prefix logic. The bot's own user ID (`adapter.BotUserID()`) is NOT consulted in the read path: if a message has a bracket-prefix it's a seat/orchestrator (via the bot); if it doesn't, it's a human (or an orchestrator-via-Slack-direct, handled in (A) above).
+`Decode` itself does not change — bot posts still decode via the existing prefix logic. The bot's own user ID (`a.botUserID`) is NOT consulted in the read path: if a message has a bracket-prefix it's a seat/orchestrator (via the bot); if it doesn't, it's a human (or an orchestrator-via-Slack-direct, handled in (A) above).
+
+**Accept-the-degraded-orchestrator-name case (v3 explicit).** If branch (A) fires AND branch (B)'s `LookupUser` fails, the result is `{Kind: orchestrator, DisplayName: "user-Uxxxxx"}` — the orchestrator kind is preserved but the display name is the synthetic. This is an accepted v1 degradation; the alternative (caching the huddle's `orchestrator_display_name` field at adapter-construction or per-read) would require either a join or pre-fetch that the §7.5 latency target doesn't justify. The `huddle.who_else` path still surfaces the orchestrator with the canonical display name from the huddle row, so the agent has a working name to `@`-mention; the `huddle.read` transcript view tolerates the synthetic during a Slack outage. Restoring the canonical name is part of a v0.2 nice-to-have if the degradation becomes painful.
+
+**Known v1 display-name inconsistency.** When the orchestrator posts via `huddle.post`, the message decodes via the prefix logic (`*[OrchestratorDisplayName]`) using the name stored on the huddle row. When the orchestrator posts directly in Slack, the same person's message decodes via the (A)+(B) path above using their Slack profile display name. These can differ (e.g. `"Operator"` vs `"John Doe"`). v1 accepts this — both names are "real" for that person; reconciling them would require unifying the huddle row's `orchestrator_display_name` with the Slack profile, a separate concern. Documented so implementers don't treat it as a bug.
 
 This places the new logic where the data is available and avoids changing `Decode`'s signature.
 
@@ -460,9 +505,9 @@ Three phases. Each is one PR. No validation gate — the feature is mechanical, 
 
 | Phase | Goal | Tasks | Depends on |
 |---|---|---|---|
-| **1. Decoder + types + adapter plumbing** | `huddle.read` decoder enriches human posts with real display names; bot user ID source established; `LookupUser` + `ListChannelMembers` adapter surface in place. No operator-facing verb changes; the existing wire shape of `huddle.read` is preserved (just better display names). | `types.Human` + `types.UserInfo` + `ErrInvalidUserRef`/`ErrUserNotFound`/`ErrMissingEmailScope`/`ErrRateLimited`; `Adapter.BotUserID()`/`ListChannelMembers`/`LookupUser` + `slackGoAdapter` impl (auth.test at construction, cache, singleflight); `FakeAdapter` impl with `UsersByRef`/`ChannelMembers`/`BotUserIDValue` fields; `mapConversationMessages` decoder enrichment per §7.4; tests for cache, singleflight, decoder enrichment, orchestrator-direct-Slack branch, lookup-failure fallback. | — |
-| **2. `who_else` returns humans** | `huddle.who_else` joins Slack at call time and surfaces humans alongside seats + orchestrator. | `WhoElseResult.Humans` field; `who_else` handler edit per §7.3; handler tests via FakeAdapter (no humans / one human / mixed bots-humans / Slack list error / orchestrator-in-channel-not-double-counted). | Phase 1 |
-| **3. Create-with-humans + `invite_human` verb** | Operator-facing surface: `humans` at create time and the new verb. | `CreateArgs.Humans` + `CreateResult.{Humans, Skipped}` + create handler edit per §7.1; new `internal/handlers/invite.go` with `huddle.invite_human` per §7.2 + §6; `Register` it in `internal/server/`; `InviteHumanArgs`/`InviteHumanResult`/`SkippedHuman` + `SkippedReason` consts; handler tests (happy + partial-skip create, invite_human happy/missing-huddle/already-in-channel, email-scope-missing skip path); `README.md` + `docs/design.md` updates (verb table + env table + scope note for `users:read.email`). | Phase 1 |
+| **1. Decoder + types + adapter plumbing** | `huddle.read` decoder enriches human posts with real display names; bot user ID + orchestrator user ID captured on the adapter; `LookupUser` + `ListChannelMembers` adapter surface in place. No operator-facing verb changes; the existing wire shape of `huddle.read` is preserved (just better display names). | `types.Human` + `types.UserInfo` + `ErrInvalidUserRef`/`ErrUserNotFound`/`ErrMissingEmailScope`/`ErrRateLimited`; `Adapter.BotUserID()`/`ListChannelMembers`/`LookupUser` + `slackGoAdapter` impl (`auth.test` at construction, store `botUserID` + `orchestratorSlackUserID` on the struct, cache, singleflight); `FakeAdapter` impl with `UsersByRef`/`ChannelMembers`/`BotUserIDValue`/`OrchestratorSlackUserIDValue` fields; `mapConversationMessages` moved from package-level fn to `*slackGoAdapter` method with `(ctx, messages)` signature per §7.4; decoder enrichment; tests for cache, singleflight, decoder enrichment, orchestrator-direct-Slack branch, lookup-failure fallback, orchestrator+lookup-failure synthetic-name accept, `ErrRateLimited` propagation. | — |
+| **2. `who_else` returns humans** | `huddle.who_else` joins Slack at call time and surfaces humans alongside seats + orchestrator. Tokenless operation preserved via the §7.3 `ErrNoToken` degrade path. | `WhoElseResult.Humans` field; `who_else` handler edit per §7.3 (including the `ErrNoToken` graceful-degrade branch); handler tests via FakeAdapter (no humans / one human / mixed bots-humans / Slack list error → `CodeInternalError` / tokenless → `humans: []` / orchestrator-in-channel-not-double-counted / deactivated user dropped). | Phase 1 |
+| **3. Create-with-humans + `invite_human` verb** | Operator-facing surface: `humans` at create time and the new verb. Human invite errors are best-effort per §7.1 — `Skipped{Reason: invite_failed}`, never fails the verb. | `CreateArgs.Humans` + `CreateResult.{Humans, Skipped}` + create handler edit per §7.1; new `internal/handlers/invite.go` with `huddle.invite_human` per §7.2 + §6; `Register` it in `internal/server/`; `InviteHumanArgs`/`InviteHumanResult`/`SkippedHuman` + `SkippedReason` consts (including new `SkippedReasonInviteFailed`); handler tests (happy + partial-skip create, invite_human happy/missing-huddle/already-in-channel/invite-failed-becomes-skipped, email-scope-missing skip path); `README.md` + `docs/design.md` updates (verb table + env table + scope note for `users:read.email`). | Phase 1 |
 
 Phase 2 and 3 are independent and can ship in parallel after Phase 1 lands.
 
