@@ -33,6 +33,13 @@ type slackGoAdapter struct {
 	seq                     atomic.Uint64
 }
 
+// userCache memoizes users.info lookups with a TTL. Eviction is lazy: get
+// treats an expired entry as a miss, and the next LookupUser re-fetch overwrites
+// it via put. Entries for users never seen again are not actively purged, so the
+// map grows with the count of distinct users ever observed. For v0 this is
+// bounded in practice (small huddles, < 10 humans per the NFR) and deliberately
+// avoids a background sweeper. TODO(v0.x): add active eviction if a long-lived
+// server in a large workspace ever shows unbounded growth.
 type userCache struct {
 	mu   sync.RWMutex
 	ttl  time.Duration

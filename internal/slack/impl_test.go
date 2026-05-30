@@ -206,7 +206,7 @@ func TestLookupUserCacheTTL(t *testing.T) {
 			writeUserInfo(w, userID, "Cached Name")
 		},
 	})
-	a.userCache = newUserCache(50 * time.Millisecond)
+	a.userCache = newUserCache(100 * time.Millisecond)
 
 	ctx := context.Background()
 
@@ -220,12 +220,41 @@ func TestLookupUserCacheTTL(t *testing.T) {
 	require.Equal(t, info1, info2)
 	require.Equal(t, int32(1), userInfoCalls.Load(), "second call within TTL should not hit Slack")
 
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 
 	info3, err := a.LookupUser(ctx, "U0CACHE01")
 	require.NoError(t, err)
 	require.Equal(t, "Cached Name", info3.DisplayName)
 	require.Equal(t, int32(2), userInfoCalls.Load(), "post-TTL call should re-fetch")
+}
+
+func TestLookupUserFallsBackToRealName(t *testing.T) {
+	t.Parallel()
+
+	// users.info returns an empty display_name but a populated real_name;
+	// userInfoFromSlackUser must fall back to real_name (TDD OQ2).
+	a := testSlackAdapter(t, testSlackHandlers{
+		userInfo: func(w http.ResponseWriter, userID string) {
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"ok": true,
+				"user": map[string]any{
+					"id":      userID,
+					"is_bot":  false,
+					"deleted": false,
+					"profile": map[string]string{
+						"display_name": "",
+						"real_name":    "Real Name Only",
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		},
+	})
+
+	info, err := a.LookupUser(context.Background(), "U0REALNM01")
+	require.NoError(t, err)
+	require.Equal(t, "Real Name Only", info.DisplayName)
 }
 
 func TestLookupUserSingleflight(t *testing.T) {

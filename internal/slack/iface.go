@@ -19,7 +19,11 @@ type Adapter interface {
 	// adapter construction. Empty string from noTokenAdapter.
 	BotUserID() string
 
-	// ListChannelMembers returns Slack user IDs in the channel (single-page v1).
+	// ListChannelMembers returns Slack user IDs in the channel. Single-page in
+	// v1 — capped at Slack's default conversations.members page size, which
+	// covers the < 10-humans-per-huddle NFR. TODO(phase-2): add cursor-based
+	// pagination (GetUsersInConversationParameters.Cursor) before who_else
+	// consumes this, or large channels will silently drop members past page 1.
 	ListChannelMembers(ctx context.Context, channelID string) ([]string, error)
 
 	// LookupUser resolves a ref (Slack user ID or email) to UserInfo. Cached

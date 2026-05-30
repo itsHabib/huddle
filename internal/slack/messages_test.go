@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/itsHabib/huddle/internal/types"
@@ -176,4 +177,41 @@ func TestMapConversationMessagesEmptyOrchestratorID(t *testing.T) {
 	require.Len(t, out, 1)
 	require.Equal(t, types.IdentityKindHuman, out[0].Identity.Kind)
 	require.Equal(t, "Would Be Operator", out[0].Identity.DisplayName)
+}
+
+// TestMapConversationMessagesLookupFailedDedupWithinBatch asserts that when the
+// same author appears in multiple messages of one History batch and the first
+// users.info lookup fails, the per-batch lookupFailed map short-circuits the
+// rest — Slack is hit exactly once for that user, and every message gets the
+// synthetic fallback name. Complements the singleflight test (concurrent
+// dedup); this covers sequential same-batch dedup.
+func TestMapConversationMessagesLookupFailedDedupWithinBatch(t *testing.T) {
+	t.Parallel()
+
+	const uid = "U0DEDUP001"
+
+	var userInfoCalls atomic.Int32
+
+	a := testSlackAdapter(t, testSlackHandlers{
+		userInfo: func(w http.ResponseWriter, _ string) {
+			userInfoCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":false,"error":"user_not_found"}`))
+		},
+	})
+
+	out, err := a.mapConversationMessages(context.Background(), []slackapi.Message{
+		{Msg: slackapi.Msg{Text: "first", User: uid, Timestamp: "1.0"}},
+		{Msg: slackapi.Msg{Text: "second", User: uid, Timestamp: "2.0"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+
+	for _, m := range out {
+		require.Equal(t, types.IdentityKindHuman, m.Identity.Kind)
+		require.Equal(t, "user-"+uid, m.Identity.DisplayName)
+	}
+
+	require.Equal(t, int32(1), userInfoCalls.Load(),
+		"second appearance of a failed-lookup user in the same batch should not re-hit Slack")
 }
