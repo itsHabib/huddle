@@ -136,3 +136,20 @@ type WhoElseResult struct {
 	Orchestrator Seat   `json:"orchestrator"`
 	Seats        []Seat `json:"seats"`
 }
+
+// Human is a non-orchestrator human participant surfaced by who_else (Phase 2)
+// and create / invite_human (Phase 3). Kind is always IdentityKindHuman.
+type Human struct {
+	SlackUserID string `json:"slackUserId"`
+	DisplayName string `json:"displayName"`
+	Kind        string `json:"kind"` // always IdentityKindHuman ("human")
+}
+
+// UserInfo is the slack-package representation of a Slack user; consumed by
+// decoder enrichment and Phase 2's who_else filter.
+type UserInfo struct {
+	UserID      string `json:"userId"`
+	DisplayName string `json:"displayName"`
+	IsBot       bool   `json:"isBot"`
+	Deactivated bool   `json:"deactivated"`
+}
