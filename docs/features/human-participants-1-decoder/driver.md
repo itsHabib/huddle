@@ -14,7 +14,7 @@ batches:
   - id: 1
     label: Phase 1 — Decoder + adapter plumbing (solo)
     depends_on: []
-    status: pending
+    status: done
     streams:
       - task_id: tsk_01KSVJ7S95M2ZXXJ9860JTY0QE
         task_slug: decoder-and-adapter-plumbing
@@ -30,7 +30,10 @@ batches:
           - internal/slack/impl_test.go
           - internal/slack/messages_test.go
           - internal/slack/fake_adapter_test.go
-        status: pending
+        status: done
+        pr_number: 23
+        merge_commit: 8dfd8d7ec57ee9d786606131e65215531aef3eec
+        merged_at: 2026-05-31T22:39:07Z
 
 conflict_notes:
   - kind: solo
