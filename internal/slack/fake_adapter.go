@@ -7,6 +7,11 @@ import (
 	"github.com/itsHabib/huddle/internal/types"
 )
 
+// FakeLookupCall records one LookupUser invocation for test assertions.
+type FakeLookupCall struct {
+	Ref string
+}
+
 // FakeAdapter satisfies Adapter for tests without dialing Slack Web API.
 type FakeAdapter struct {
 	Chan         Channel
@@ -23,6 +28,26 @@ type FakeAdapter struct {
 	InviteErr  error
 
 	ReturnedTS string
+
+	// BotUserIDValue is returned by BotUserID(); tests set this in setup.
+	BotUserIDValue string
+
+	// OrchestratorSlackUserIDValue mirrors slackGoAdapter's orchestrator field
+	// for tests that verify decoder orchestrator-direct-Slack behavior.
+	OrchestratorSlackUserIDValue string
+
+	// UsersByRef drives LookupUser. Key is the ref passed to LookupUser.
+	UsersByRef map[string]types.UserInfo
+
+	// ChannelMembers drives ListChannelMembers. Key is channelID.
+	ChannelMembers map[string][]string
+
+	// LookupUserErr / ListChannelMembersErr override default behavior.
+	LookupUserErr         error
+	ListChannelMembersErr error
+
+	// LookupUserCalls records each LookupUser ref for assertions.
+	LookupUserCalls []FakeLookupCall
 }
 
 // CreateChannel records the attempted name and returns canned or configured channel metadata.
@@ -94,3 +119,34 @@ func (f *FakeAdapter) History(_ context.Context, _ string, _ *time.Time, _ int) 
 
 	return out, nil
 }
+
+// BotUserID returns BotUserIDValue.
+func (f *FakeAdapter) BotUserID() string {
+	return f.BotUserIDValue
+}
+
+// LookupUser returns UsersByRef[ref] or configured errors.
+func (f *FakeAdapter) LookupUser(_ context.Context, ref string) (types.UserInfo, error) {
+	f.LookupUserCalls = append(f.LookupUserCalls, FakeLookupCall{Ref: ref})
+
+	if f.LookupUserErr != nil {
+		return types.UserInfo{}, f.LookupUserErr
+	}
+
+	if info, ok := f.UsersByRef[ref]; ok {
+		return info, nil
+	}
+
+	return types.UserInfo{}, ErrUserNotFound
+}
+
+// ListChannelMembers returns ChannelMembers[channelID].
+func (f *FakeAdapter) ListChannelMembers(_ context.Context, channelID string) ([]string, error) {
+	if f.ListChannelMembersErr != nil {
+		return nil, f.ListChannelMembersErr
+	}
+
+	return f.ChannelMembers[channelID], nil
+}
+
+var _ Adapter = (*FakeAdapter)(nil)

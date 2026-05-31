@@ -35,6 +35,50 @@ func TestFakeAdapterHistoryPassesThrough(t *testing.T) {
 	require.Len(t, out, 1)
 }
 
+func TestFakeAdapterLookupUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	ad := FakeAdapter{
+		UsersByRef: map[string]types.UserInfo{
+			"U0FAKE01": {UserID: "U0FAKE01", DisplayName: "Pat"},
+		},
+	}
+
+	info, err := ad.LookupUser(ctx, "U0FAKE01")
+	require.NoError(t, err)
+	require.Equal(t, "Pat", info.DisplayName)
+	require.Len(t, ad.LookupUserCalls, 1)
+	require.Equal(t, "U0FAKE01", ad.LookupUserCalls[0].Ref)
+
+	_, err = ad.LookupUser(ctx, "U0MISSING")
+	require.ErrorIs(t, err, ErrUserNotFound)
+
+	ad.LookupUserErr = ErrNoToken
+	_, err = ad.LookupUser(ctx, "U0FAKE01")
+	require.ErrorIs(t, err, ErrNoToken)
+}
+
+func TestFakeAdapterListChannelMembers(t *testing.T) {
+	t.Parallel()
+
+	ad := FakeAdapter{ChannelMembers: map[string][]string{"C1": {"U1", "U2"}}}
+	members, err := ad.ListChannelMembers(context.Background(), "C1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"U1", "U2"}, members)
+
+	ad.ListChannelMembersErr = ErrRateLimited
+	_, err = ad.ListChannelMembers(context.Background(), "C1")
+	require.ErrorIs(t, err, ErrRateLimited)
+}
+
+func TestFakeAdapterBotUserID(t *testing.T) {
+	t.Parallel()
+
+	ad := FakeAdapter{BotUserIDValue: "UBOTFAKE"}
+	require.Equal(t, "UBOTFAKE", ad.BotUserID())
+}
+
 func TestFakeAdapterHistorySkipsSystemSubTypes(t *testing.T) {
 	t.Parallel()
 

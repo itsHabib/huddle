@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -60,7 +61,7 @@ func (a *slackGoAdapter) History(ctx context.Context, channelID string, since *t
 		return nil, fmt.Errorf("fetch history channel %s: %w", channelID, err)
 	}
 
-	msgs, err := mapConversationMessages(resp.Messages)
+	msgs, err := a.mapConversationMessages(ctx, resp.Messages)
 
 	return msgs, err
 }
@@ -93,8 +94,9 @@ var systemSubTypes = map[string]struct{}{
 	"tombstone":         {},
 }
 
-func mapConversationMessages(messages []slackapi.Message) ([]types.Message, error) {
+func (a *slackGoAdapter) mapConversationMessages(ctx context.Context, messages []slackapi.Message) ([]types.Message, error) {
 	msgs := make([]types.Message, 0, len(messages))
+	lookupFailed := make(map[string]struct{})
 
 	for _, sm := range messages {
 		subType := strings.TrimSpace(sm.SubType)
@@ -125,9 +127,7 @@ func mapConversationMessages(messages []slackapi.Message) ([]types.Message, erro
 		}
 
 		if identity.Kind == types.IdentityKindHuman && rawUser != "" {
-			dup := identity
-			dup.DisplayName = "user-" + rawUser
-			identity = dup
+			identity = a.enrichHumanIdentity(ctx, identity, rawUser, lookupFailed)
 		}
 
 		threadTS := strings.TrimSpace(sm.ThreadTimestamp)
@@ -147,6 +147,41 @@ func mapConversationMessages(messages []slackapi.Message) ([]types.Message, erro
 	}
 
 	return msgs, nil
+}
+
+func (a *slackGoAdapter) enrichHumanIdentity(
+	ctx context.Context,
+	identity types.Identity,
+	rawUser string,
+	lookupFailed map[string]struct{},
+) types.Identity {
+	if a.orchestratorSlackUserID != "" && rawUser == a.orchestratorSlackUserID {
+		identity.Kind = types.IdentityKindOrchestrator
+	}
+
+	if _, alreadyFailed := lookupFailed[rawUser]; alreadyFailed {
+		identity.DisplayName = "user-" + rawUser
+
+		return identity
+	}
+
+	info, err := a.LookupUser(ctx, rawUser)
+	if err == nil && info.DisplayName != "" {
+		identity.DisplayName = info.DisplayName
+
+		return identity
+	}
+
+	lookupFailed[rawUser] = struct{}{}
+	identity.DisplayName = "user-" + rawUser
+	if err != nil {
+		slog.WarnContext(ctx, "users.info lookup failed for message author; using synthetic display name",
+			"slack_user_id", rawUser,
+			"err", err,
+		)
+	}
+
+	return identity
 }
 
 func parseSlackTSToTime(tsStr string) (time.Time, error) {
