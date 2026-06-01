@@ -72,7 +72,7 @@ type CreateResult struct {
 	Orchestrator Seat           `json:"orchestrator"`
 	Seats        []CreatedSeat  `json:"seats"`
 	Humans       []Human        `json:"humans"` // always present; [] when none
-	Skipped      []SkippedHuman `json:"skippedHumans,omitempty"`
+	Skipped      []SkippedHuman `json:"skipped,omitempty"`
 }
 
 // CreatedSeat includes issuance material for MCP clients.
@@ -162,7 +162,7 @@ type SkippedHuman struct {
 // SkippedReason classifies why a human ref was skipped.
 type SkippedReason string
 
-// Skipped-reason values returned in CreateResult.skippedHumans and InviteHumanResult.skipped.
+// Skipped-reason values returned in CreateResult.skipped and InviteHumanResult.skipped.
 const (
 	SkippedReasonAlreadyInChannel  SkippedReason = "already_in_channel"
 	SkippedReasonUnknownUser       SkippedReason = "unknown_user"

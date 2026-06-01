@@ -10,7 +10,7 @@ import (
 )
 
 // resolveAndInviteHumans resolves each ref to a Slack user and invites them to
-// channelID. Best-effort: every ref yields either an Invited human or a Skipped
+// channelID. Best-effort: every ref yields either an invited human or a skipped
 // record; the function never returns an error. invited/skipped are non-nil.
 func resolveAndInviteHumans(
 	ctx context.Context,
@@ -28,6 +28,17 @@ func resolveAndInviteHumans(
 	logger := humanLogger(log)
 
 	members, merr := adapter.ListChannelMembers(ctx, channelID)
+	if errors.Is(merr, slack.ErrNoToken) {
+		// No token: every ref is un-invitable, and the per-ref LookupUser calls
+		// would all fail with ErrNoToken too. Short-circuit (mirrors who_else's
+		// tokenless degrade) and report every ref as skipped.
+		for _, ref := range refs {
+			skipped = append(skipped, types.SkippedHuman{Ref: ref, Reason: types.SkippedReasonInviteFailed})
+		}
+
+		return invited, skipped
+	}
+
 	memberSet := make(map[string]struct{})
 	if merr != nil {
 		logger.Warn("channel member pre-check failed; continuing without membership set",
@@ -35,27 +46,38 @@ func resolveAndInviteHumans(
 			"error", merr.Error(),
 		)
 	}
-
 	for _, m := range members {
 		memberSet[m] = struct{}{}
 	}
 
 	for _, ref := range refs {
-		invited, skipped = inviteOneHuman(ctx, adapter, logger, channelID, ref, memberSet, invited, skipped)
+		human, skip, ok := inviteOneHuman(ctx, adapter, logger, channelID, ref, memberSet)
+		if !ok {
+			skipped = append(skipped, skip)
+
+			continue
+		}
+
+		invited = append(invited, human)
+		// Record the just-invited user so a duplicate ref later in the same
+		// request (e.g. the same person by ID and by email) resolves as
+		// already_in_channel instead of triggering a second invite.
+		memberSet[human.SlackUserID] = struct{}{}
 	}
 
 	return invited, skipped
 }
 
+// inviteOneHuman resolves one ref and invites the user when they are not already
+// a channel member. Returns (human, _, true) on a successful invite, or
+// (_, skip, false) carrying the reason the ref was skipped.
 func inviteOneHuman(
 	ctx context.Context,
 	adapter slack.Adapter,
 	log *slog.Logger,
 	channelID, ref string,
 	memberSet map[string]struct{},
-	invited []types.Human,
-	skipped []types.SkippedHuman,
-) ([]types.Human, []types.SkippedHuman) {
+) (types.Human, types.SkippedHuman, bool) {
 	info, err := adapter.LookupUser(ctx, ref)
 	if err != nil {
 		reason := classifyLookupErr(err)
@@ -66,14 +88,11 @@ func inviteOneHuman(
 			)
 		}
 
-		return invited, append(skipped, types.SkippedHuman{Ref: ref, Reason: reason})
+		return types.Human{}, types.SkippedHuman{Ref: ref, Reason: reason}, false
 	}
 
 	if _, inChannel := memberSet[info.UserID]; inChannel {
-		return invited, append(skipped, types.SkippedHuman{
-			Ref:    ref,
-			Reason: types.SkippedReasonAlreadyInChannel,
-		})
+		return types.Human{}, types.SkippedHuman{Ref: ref, Reason: types.SkippedReasonAlreadyInChannel}, false
 	}
 
 	if err = adapter.InviteUserToChannel(ctx, channelID, info.UserID); err != nil {
@@ -83,17 +102,14 @@ func inviteOneHuman(
 			"error", err.Error(),
 		)
 
-		return invited, append(skipped, types.SkippedHuman{
-			Ref:    ref,
-			Reason: types.SkippedReasonInviteFailed,
-		})
+		return types.Human{}, types.SkippedHuman{Ref: ref, Reason: types.SkippedReasonInviteFailed}, false
 	}
 
-	return append(invited, types.Human{
+	return types.Human{
 		SlackUserID: info.UserID,
 		DisplayName: info.DisplayName,
 		Kind:        types.IdentityKindHuman,
-	}), skipped
+	}, types.SkippedHuman{}, true
 }
 
 func classifyLookupErr(err error) types.SkippedReason {

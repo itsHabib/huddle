@@ -100,8 +100,8 @@ type CreateArgs struct {
 // CreateResult gains:
 type CreateResult struct {
 	// ... existing fields ...
-	Humans  []Human        `json:"humans"`                 // always present; [] when none
-	Skipped []SkippedHuman `json:"skippedHumans,omitempty"`
+	Humans  []Human        `json:"humans"`            // always present; [] when none
+	Skipped []SkippedHuman `json:"skipped,omitempty"` // consistent with InviteHumanResult.skipped
 }
 
 // New verb arg/result:
@@ -230,7 +230,7 @@ handlers.RegisterInviteHuman(s, hdep)
 
 - `make check` green (vet + `go tool golangci-lint run` + `go test ./...` + build) — including the Cheney linters (`gocognit`/`nestif`/`cyclop`/`revive`).
 - `WhoElseResult.Humans` present and `[]`-when-empty; `who_else` lists non-bot, non-orchestrator, non-deactivated channel members with real display names; tokenless → `humans: []`; non-`ErrNoToken` Slack error → `CodeInternalError`.
-- `CreateArgs.Humans` accepted; `CreateResult.Humans` + `skippedHumans` populated; create still succeeds (no compensation) when an invite fails.
+- `CreateArgs.Humans` accepted; `CreateResult.Humans` + `skipped` populated; create still succeeds (no compensation) when an invite fails.
 - `huddle.invite_human` registered and reachable; validates huddleId + non-empty humans; missing huddle → `CodeInvalidParams`; returns `{invited, skipped}` with every ref accounted for; no DB write.
 - Every `SkippedReason` value is produced by at least one test.
 - `slack.Adapter` interface unchanged; no new persisted state; `internal/config` not imported by the slack package.

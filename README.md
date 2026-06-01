@@ -92,7 +92,7 @@ Each lives under `cmd/<name>/`. `make install` ships `huddle` only; run the othe
 
 The MCP server reads these environment variables: `HUDDLE_SLACK_BOT_TOKEN` (required for Slack-touching verbs), `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, and `HUDDLE_ORCHESTRATOR_SLACK_USER_ID`. Defaults, validation, and semantics live in [`docs/design.md#configuration`](docs/design.md#configuration).
 
-Slack OAuth scopes: `channels:read` and `users:read` cover channel membership and user-ID human refs; add **`users:read.email`** to resolve email refs in `huddle.create` / `huddle.invite_human` (without it, email refs land in `skippedHumans` with `missing_email_scope`).
+Slack OAuth scopes: `channels:read` and `users:read` cover channel membership and user-ID human refs; add **`users:read.email`** to resolve email refs in `huddle.create` / `huddle.invite_human` (without it, email refs land in `skipped` with `missing_email_scope`).
 
 ## Stack
 

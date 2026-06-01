@@ -14,7 +14,7 @@ type stubVerb struct {
 	OK   bool   `json:"ok"`
 }
 
-// RegisterVerbStubs wires all v0 verb handlers. All six v0 verbs now have
+// RegisterVerbStubs wires all v0 verb handlers. All seven v0 verbs now have
 // real handlers — no stubs remain. The stub-registration scaffolding is
 // retained for future verbs that may ship as no-op stubs before their
 // handlers land.

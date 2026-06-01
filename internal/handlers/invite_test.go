@@ -231,3 +231,42 @@ func TestInviteHuman_tokenless(t *testing.T) {
 		require.Equal(t, types.SkippedReasonInviteFailed, skip.Reason)
 	}
 }
+
+func TestInviteHuman_duplicateRefInvitedOnce(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	channelID := "C_dup"
+	h := seedHuddle(t, st, channelID)
+
+	fa := &slack.FakeAdapter{
+		UsersByRef: map[string]types.UserInfo{
+			"U_bob": {UserID: "U_bob", DisplayName: "Bob"},
+		},
+		ChannelMembers: map[string][]string{channelID: {}},
+	}
+	deps := Deps{Slack: fa, Store: st}
+
+	// The same user appears twice in one request (e.g. by ID and email). The
+	// first occurrence is invited; the second must resolve as already_in_channel
+	// (the just-invited user is recorded in the membership set), not a 2nd invite.
+	res, execErr := executeInviteHuman(ctx, deps, types.InviteHumanArgs{
+		HuddleID: h.ID,
+		Humans:   []string{"U_bob", "U_bob"},
+	})
+	require.NoError(t, execErr)
+	require.Equal(t, []types.Human{{
+		SlackUserID: "U_bob",
+		DisplayName: "Bob",
+		Kind:        types.IdentityKindHuman,
+	}}, res.Invited)
+	require.Equal(t, []types.SkippedHuman{{
+		Ref:    "U_bob",
+		Reason: types.SkippedReasonAlreadyInChannel,
+	}}, res.Skipped)
+	require.Len(t, fa.Invites, 1, "duplicate ref must trigger exactly one invite")
+}
