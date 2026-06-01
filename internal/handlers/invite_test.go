@@ -270,3 +270,40 @@ func TestInviteHuman_duplicateRefInvitedOnce(t *testing.T) {
 	}}, res.Skipped)
 	require.Len(t, fa.Invites, 1, "duplicate ref must trigger exactly one invite")
 }
+
+func TestInviteHuman_sameUserByIDAndEmailInvitedOnce(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	channelID := "C_xref"
+	h := seedHuddle(t, st, channelID)
+
+	// The same person referenced two ways — by user ID and by email — both
+	// resolve to the same SlackUserID. The dedupe key is the resolved user ID,
+	// not the input ref, so the second occurrence is already_in_channel.
+	fa := &slack.FakeAdapter{
+		UsersByRef: map[string]types.UserInfo{
+			"U_bob":           {UserID: "U_bob", DisplayName: "Bob"},
+			"bob@example.com": {UserID: "U_bob", DisplayName: "Bob"},
+		},
+		ChannelMembers: map[string][]string{channelID: {}},
+	}
+	deps := Deps{Slack: fa, Store: st}
+
+	res, execErr := executeInviteHuman(ctx, deps, types.InviteHumanArgs{
+		HuddleID: h.ID,
+		Humans:   []string{"U_bob", "bob@example.com"},
+	})
+	require.NoError(t, execErr)
+	require.Len(t, res.Invited, 1)
+	require.Equal(t, "U_bob", res.Invited[0].SlackUserID)
+	require.Equal(t, []types.SkippedHuman{{
+		Ref:    "bob@example.com",
+		Reason: types.SkippedReasonAlreadyInChannel,
+	}}, res.Skipped)
+	require.Len(t, fa.Invites, 1, "same user by ID and email must be invited exactly once")
+}

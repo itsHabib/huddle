@@ -38,7 +38,7 @@ export HUDDLE_ORCHESTRATOR_SLACK_USER_ID=U...   # optional; auto-invite operator
 make run   # same as go run ./cmd/huddle
 ```
 
-The server boots without `HUDDLE_SLACK_BOT_TOKEN` — `huddle.who_else` is local-only and works either way. Slack-touching verbs (`create` / `close` / `post` / `read`) error at call time with a clear message until the token is set.
+The server boots without `HUDDLE_SLACK_BOT_TOKEN` — `huddle.who_else` works either way (it lists the channel's humans when a token is present and returns `humans: []` when not). Slack-touching verbs (`create` / `close` / `post` / `read`) error at call time with a clear message until the token is set.
 
 Register the server with Claude Code or Claude Desktop so sessions can call the verbs. In Claude Code:
 
