@@ -29,6 +29,7 @@ func RegisterVerbStubs(s *mcp.Server, deps Deps) {
 	handlers.RegisterCreate(s, hdep)
 	handlers.RegisterClose(s, hdep)
 	handlers.RegisterWhoElse(s, hdep)
+	handlers.RegisterInviteHuman(s, hdep)
 	handlers.RegisterList(s, hdep)
 	handlers.RegisterPost(s, hdep)
 	handlers.RegisterRead(s, hdep)

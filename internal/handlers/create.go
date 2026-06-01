@@ -25,7 +25,7 @@ const maxSlackChannelNameLen = 80
 func RegisterCreate(s *mcp.Server, deps Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "huddle.create",
-		Description: "Creates a huddle: Slack channel, persisted row, and per-seat keys.",
+		Description: "Creates a huddle: Slack channel, persisted row, per-seat keys, and optional human invites (best-effort).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args types.CreateArgs) (*mcp.CallToolResult, types.CreateResult, error) {
 		out, err := executeCreate(ctx, deps, args)
 		if err != nil {
@@ -92,11 +92,15 @@ func executeCreate(ctx context.Context, deps Deps, args types.CreateArgs) (types
 		return types.CreateResult{}, err
 	}
 
+	humans, skipped := resolveAndInviteHumans(ctx, deps.Slack, compensationLogger(deps), ch.ID, args.Humans)
+
 	return types.CreateResult{
 		HuddleID:     huddleID,
 		Channel:      ch.Name,
 		Orchestrator: types.Seat{ID: orchID, DisplayName: orchName},
 		Seats:        seatsOut,
+		Humans:       humans,
+		Skipped:      skipped,
 	}, nil
 }
 

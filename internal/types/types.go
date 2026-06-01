@@ -56,6 +56,7 @@ type CreateArgs struct {
 	Orchestrator Seat             `json:"orchestrator"`
 	Seats        []SeatDefinition `json:"seats"`
 	TTLHours     *int             `json:"ttlHours,omitempty"`
+	Humans       []string         `json:"humans,omitempty"` // Slack user IDs or emails
 }
 
 // SeatDefinition is a logical seat declaration before keys exist.
@@ -66,10 +67,12 @@ type SeatDefinition struct {
 
 // CreateResult is emitted after provisioning (handler stream).
 type CreateResult struct {
-	HuddleID     string        `json:"huddleId"`
-	Channel      string        `json:"channel"`
-	Orchestrator Seat          `json:"orchestrator"`
-	Seats        []CreatedSeat `json:"seats"`
+	HuddleID     string         `json:"huddleId"`
+	Channel      string         `json:"channel"`
+	Orchestrator Seat           `json:"orchestrator"`
+	Seats        []CreatedSeat  `json:"seats"`
+	Humans       []Human        `json:"humans"` // always present; [] when none
+	Skipped      []SkippedHuman `json:"skippedHumans,omitempty"`
 }
 
 // CreatedSeat includes issuance material for MCP clients.
@@ -132,10 +135,41 @@ type WhoElseArgs struct {
 
 // WhoElseResult summarizes who shares the slice.
 type WhoElseResult struct {
-	Purpose      string `json:"purpose"`
-	Orchestrator Seat   `json:"orchestrator"`
-	Seats        []Seat `json:"seats"`
+	Purpose      string  `json:"purpose"`
+	Orchestrator Seat    `json:"orchestrator"`
+	Seats        []Seat  `json:"seats"`
+	Humans       []Human `json:"humans"` // always present; [] when none
 }
+
+// InviteHumanArgs targets an existing huddle for human invites.
+type InviteHumanArgs struct {
+	HuddleID string   `json:"huddleId"`
+	Humans   []string `json:"humans"`
+}
+
+// InviteHumanResult reports best-effort invite outcomes.
+type InviteHumanResult struct {
+	Invited []Human        `json:"invited"` // always present; [] when none
+	Skipped []SkippedHuman `json:"skipped,omitempty"`
+}
+
+// SkippedHuman records one ref that could not be invited.
+type SkippedHuman struct {
+	Ref    string        `json:"ref"`
+	Reason SkippedReason `json:"reason"`
+}
+
+// SkippedReason classifies why a human ref was skipped.
+type SkippedReason string
+
+// Skipped-reason values returned in CreateResult.skippedHumans and InviteHumanResult.skipped.
+const (
+	SkippedReasonAlreadyInChannel  SkippedReason = "already_in_channel"
+	SkippedReasonUnknownUser       SkippedReason = "unknown_user"
+	SkippedReasonInvalidRef        SkippedReason = "invalid_ref"
+	SkippedReasonMissingEmailScope SkippedReason = "missing_email_scope"
+	SkippedReasonInviteFailed      SkippedReason = "invite_failed"
+)
 
 // Human is a non-orchestrator human participant surfaced by who_else (Phase 2)
 // and create / invite_human (Phase 3). Kind is always IdentityKindHuman.

@@ -61,18 +61,19 @@ Claude Desktop uses an `mcpServers` block in its config file — same binary and
 }
 ```
 
-Without `HUDDLE_SLACK_BOT_TOKEN`, the server still boots; Slack-touching verbs return `HUDDLE_SLACK_BOT_TOKEN is not set; Slack-touching verbs (create, close, post, read) are unavailable — set the env to enable them` at call time.
+Without `HUDDLE_SLACK_BOT_TOKEN`, the server still boots; Slack-touching verbs return `HUDDLE_SLACK_BOT_TOKEN is not set; Slack-touching verbs (create, close, post, read) are unavailable — set the env to enable them` at call time. `huddle.invite_human` still returns success with refs under `skipped` (reason `invite_failed`) when Slack is unavailable.
 
-## v0 verb surface (6 verbs)
+## v0 verb surface (7 verbs)
 
 | Verb | Side | Purpose |
 |---|---|---|
-| `huddle.create` | operator | Open a huddle with seats |
+| `huddle.create` | operator | Open a huddle with seats; optional `humans` (Slack user IDs or emails) invited best-effort |
 | `huddle.close` | operator | Archive a huddle |
 | `huddle.list` | operator | List huddles |
 | `huddle.post` | agent | Post a message (key = identity) |
 | `huddle.read` | agent | Read history |
-| `huddle.who_else` | agent | List orchestrator + peers |
+| `huddle.who_else` | agent | List orchestrator, peers, and channel humans |
+| `huddle.invite_human` | operator | Invite humans to an existing huddle (best-effort) |
 
 v1: `add_seat`, `revoke_key`, `watch`. Later: `broadcast`, `ping_orchestrator`, `search`.
 
@@ -90,6 +91,8 @@ Each lives under `cmd/<name>/`. `make install` ships `huddle` only; run the othe
 ## Configuration
 
 The MCP server reads these environment variables: `HUDDLE_SLACK_BOT_TOKEN` (required for Slack-touching verbs), `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, and `HUDDLE_ORCHESTRATOR_SLACK_USER_ID`. Defaults, validation, and semantics live in [`docs/design.md#configuration`](docs/design.md#configuration).
+
+Slack OAuth scopes: `channels:read` and `users:read` cover channel membership and user-ID human refs; add **`users:read.email`** to resolve email refs in `huddle.create` / `huddle.invite_human` (without it, email refs land in `skippedHumans` with `missing_email_scope`).
 
 ## Stack
 
