@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 huddle is a Go MCP server that opens a Slack channel per "huddle," issues per-seat keys (each key = an identity), and lets agents post + read through MCP verbs with automatic attribution. The operator is the implicit orchestrator — distinct identity, visible to every agent in the room.
 
-Six v0 verbs (`huddle.create`, `huddle.close`, `huddle.list`, `huddle.post`, `huddle.read`, `huddle.who_else`) all live behind the official `github.com/modelcontextprotocol/go-sdk` stdio transport. Storage is local SQLite (modernc, pure-Go, no CGO).
+Seven v0 verbs (`huddle.create`, `huddle.close`, `huddle.list`, `huddle.post`, `huddle.read`, `huddle.who_else`, `huddle.invite_human`) all live behind the official `github.com/modelcontextprotocol/go-sdk` stdio transport. Storage is local SQLite (modernc, pure-Go, no CGO).
 
 ## Dev commands
 
@@ -205,11 +205,11 @@ Accept interfaces, return structs; small interfaces (1–2 methods); errors lowe
 Layered top-down: **entry → server → handlers → adapter/store**. Each layer is small, has a typed Deps struct, and depends only on layers below.
 
 - **`cmd/huddle/main.go`** — bootstrap: env → config → store → slack adapter → MCP server → signal-aware run loop.
-- **`internal/server/`** — MCP lifecycle. `RegisterVerbStubs` wires every handler. Despite the name, no stubs remain — all six v0 verbs have real handlers.
+- **`internal/server/`** — MCP lifecycle. `RegisterVerbStubs` wires every handler. Despite the name, no stubs remain — all seven v0 verbs have real handlers.
 - **`internal/handlers/`** — one file per verb (`create.go`, `close.go`, `list.go`, `post.go`, `read.go`, `who_else.go`), plus `resolve.go` (key-vs-huddleId speaker resolution shared by post + read) and `deps.go` (typed Deps struct). Each handler exports a `Register<Verb>(s, deps)` that calls `mcp.AddTool(...)`.
 - **`internal/slack/`** — Slack façade. `Adapter` interface (`iface.go`) is the seam — handlers depend on it, never on `slack-go` directly. Real impl is `slackGoAdapter` (`impl.go` / `channels.go` / `messages.go`); `FakeAdapter` (`fake_adapter.go`) records calls + returns canned data for handler tests. Message-prefix encoding (`[displayName] body` for seats, `*[displayName] body` for orchestrator) lives in `encoding.go` and is the source of truth for identity-on-the-wire.
 - **`internal/store/`** — SQLite via `modernc.org/sqlite`. Schema is `//go:embed`-ed from `schema.sql`. Two tables: `huddles` (one row per huddle) and `keys` (per-seat keys; FK to huddles with `ON DELETE CASCADE`). Constructor `store.New(stateDir)` opens / applies schema; `OpenMemory(ctx)` is the test fixture.
-- **`internal/config/`** — env-only `Load()`. No required env vars at startup. `HUDDLE_SLACK_BOT_TOKEN` gates Slack-touching verbs (`create` / `close` / `post` / `read`) — the slack adapter's `noTokenAdapter` returns `slack.ErrNoToken` at call time when it's unset, so `huddle.who_else` (local-only) still serves. Optional: `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` (auto-invites a human to every channel `huddle.create` opens; best-effort).
+- **`internal/config/`** — env-only `Load()`. No required env vars at startup. `HUDDLE_SLACK_BOT_TOKEN` gates Slack-touching verbs (`create` / `close` / `post` / `read`) — the slack adapter's `noTokenAdapter` returns `slack.ErrNoToken` at call time when it's unset, so `huddle.who_else` still serves (it lists channel humans when a token is present; `humans: []` when not). Optional: `HUDDLE_STATE_DIR`, `HUDDLE_LOG_LEVEL`, `HUDDLE_CHANNEL_PREFIX`, `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` (auto-invites a human to every channel `huddle.create` opens; best-effort).
 - **`internal/errors/`** — `huddleerr.MCPError(jsonrpc.Code*, err)` wraps business errors into JSON-RPC errors. Validation → `CodeInvalidParams` (-32602); runtime → `CodeInternalError` (-32603).
 - **`internal/types/`** — shared structs (`Huddle`, `Seat`, `Identity`, `Message`, plus `CreateArgs` / `ReadArgs` / etc. per-verb arg + result types). `IdentityKind` is `seat | orchestrator | human`.
 

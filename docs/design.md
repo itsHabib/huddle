@@ -107,16 +107,17 @@ No env-var-loading library; a local `.env` is read via a tiny helper or just `di
 
 ## v0 verb surface (recap)
 
-Six verbs. Three operator-side, three agent-side.
+Seven verbs. Four operator-side, three agent-side.
 
 | Verb | Side | Returns |
 |---|---|---|
-| `huddle.create` | operator | `{ huddleId, channel, orchestrator, seats: [{ id, key, displayName }] }` |
+| `huddle.create` | operator | `{ huddleId, channel, orchestrator, seats: [{ id, key, displayName }], humans, skipped? }` — optional `humans` arg (Slack user IDs or emails) |
 | `huddle.close` | operator | `{ closed: true, archivedChannel }` |
 | `huddle.list` | operator | `Huddle[]` |
 | `huddle.post` | agent | `{ messageId, postedAt, identity }` |
 | `huddle.read` | agent | `Message[]` |
-| `huddle.who_else` | agent | `{ purpose, orchestrator, seats }` |
+| `huddle.who_else` | agent | `{ purpose, orchestrator, seats, humans }` |
+| `huddle.invite_human` | operator | `{ invited, skipped? }` — best-effort; unresolvable refs under `skipped` |
 
 v1 deferred: `add_seat`, `revoke_key`, `watch`.
 
@@ -244,7 +245,23 @@ func HandleWhoElse(ctx context.Context, req mcp.CallToolRequest, deps *Deps) (*m
         Purpose: h.Purpose,
         Orchestrator: Orch{DisplayName: h.OrchestratorDisplayName},
         Seats: seats,                                          // omit the key value; only id + displayName
+        Humans: listChannelHumans(ctx, deps, h.SlackChannelID), // non-bot, non-orchestrator channel members
     })
+}
+```
+
+### `huddle.invite_human`
+
+```go
+func HandleInviteHuman(ctx context.Context, req mcp.CallToolRequest, deps *Deps) (*mcp.CallToolResult, error) {
+    args, err := decodeInviteHumanArgs(req.Params.Arguments)
+    if err != nil { return mcpErr(InvalidParams, err) }
+
+    h, err := deps.Store.LookupHuddle(ctx, args.HuddleID)
+    if err != nil { return mcpErr(InvalidParams, ErrHuddleNotFound) }
+
+    invited, skipped := resolveAndInviteHumans(ctx, deps.Slack, deps.Log, h.SlackChannelID, args.Humans)
+    return mcpOK(InviteHumanResult{Invited: invited, Skipped: skipped})
 }
 ```
 
@@ -369,13 +386,15 @@ Env vars loaded by `internal/config/config.go`:
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `HUDDLE_SLACK_BOT_TOKEN` | per-verb | — | Slack bot token (`xoxb-...`). Required for `huddle.create` / `.close` / `.post` / `.read`. `huddle.who_else` is local-only and works without it; the server boots regardless. |
+| `HUDDLE_SLACK_BOT_TOKEN` | per-verb | — | Slack bot token (`xoxb-...`). Required for `huddle.create` / `.close` / `.post` / `.read`. `huddle.invite_human` degrades to all-skipped when unset. `huddle.who_else` works without it — its `humans` list is populated from Slack when a token is present and is `[]` when not; the server boots regardless. |
 | `HUDDLE_STATE_DIR` | no | `.huddle` | Where `huddle.sqlite` lives (in cwd unless overridden) |
 | `HUDDLE_LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error` |
 | `HUDDLE_CHANNEL_PREFIX` | no | `huddle-` | Prefix for created Slack channels |
 | `HUDDLE_ORCHESTRATOR_SLACK_USER_ID` | no | — | If set, auto-invites this Slack user (`U…`) to every channel `huddle.create` opens. Best-effort: invite failure is logged, not propagated. |
 
-`internal/config/config.go` reads env vars at startup but no value is strictly required for the process to boot. Slack-touching verbs surface `slack.ErrNoToken` at call time when `HUDDLE_SLACK_BOT_TOKEN` is unset; local-only verbs (`huddle.who_else`) work either way.
+`internal/config/config.go` reads env vars at startup but no value is strictly required for the process to boot. Slack-touching verbs surface `slack.ErrNoToken` at call time when `HUDDLE_SLACK_BOT_TOKEN` is unset. `huddle.who_else` works either way: with a token it also lists the channel's humans (non-`ErrNoToken` Slack errors surface as `CodeInternalError`), and without a token `who_else.humans` is `[]`.
+
+**Slack OAuth scopes:** `channels:read` and `users:read` cover channel membership listing and user-ID human refs. **`users:read.email`** is required to resolve email refs via `users.lookupByEmail` in `huddle.create` / `huddle.invite_human`; without it, email refs return `skipped{reason: missing_email_scope}` while user-ID refs are unaffected.
 
 ## Error handling
 

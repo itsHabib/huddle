@@ -46,6 +46,9 @@ type FakeAdapter struct {
 	LookupUserErr         error
 	ListChannelMembersErr error
 
+	// LookupUserErrByRef maps a ref to a per-call LookupUser error.
+	LookupUserErrByRef map[string]error
+
 	// LookupUserCalls records each LookupUser ref for assertions.
 	LookupUserCalls []FakeLookupCall
 }
@@ -128,6 +131,12 @@ func (f *FakeAdapter) BotUserID() string {
 // LookupUser returns UsersByRef[ref] or configured errors.
 func (f *FakeAdapter) LookupUser(_ context.Context, ref string) (types.UserInfo, error) {
 	f.LookupUserCalls = append(f.LookupUserCalls, FakeLookupCall{Ref: ref})
+
+	if f.LookupUserErrByRef != nil {
+		if err, ok := f.LookupUserErrByRef[ref]; ok {
+			return types.UserInfo{}, err
+		}
+	}
 
 	if f.LookupUserErr != nil {
 		return types.UserInfo{}, f.LookupUserErr

@@ -92,6 +92,8 @@ func TestCreateHappyPathTwoSeats(t *testing.T) {
 	rowB, kerr := st.LookupKey(ctx, keyB)
 	require.NoError(t, kerr)
 	require.Equal(t, res.HuddleID, rowB.HuddleID)
+	require.NotNil(t, res.Humans)
+	require.Empty(t, res.Humans)
 }
 
 func TestCreateSlackNameTakenRetrySucceeds(t *testing.T) {
@@ -250,6 +252,116 @@ func TestCreateInviteFailureDoesNotFailCreate(t *testing.T) {
 	require.NoError(t, execErr)
 	require.NotEmpty(t, res.HuddleID)
 	require.Len(t, fa.Invites, 1)
+}
+
+func TestCreateWithHumans_happy(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	fa := &slack.FakeAdapter{
+		Chan: slack.Channel{ID: "C_create_humans", Name: "huddle-p"},
+		UsersByRef: map[string]types.UserInfo{
+			"U_alice": {UserID: "U_alice", DisplayName: "Alice"},
+		},
+		ChannelMembers: map[string][]string{"C_create_humans": {}},
+	}
+	deps := Deps{
+		Slack: fa,
+		Store: st,
+		Cfg:   config.Config{ChannelPrefix: "huddle-"},
+	}
+
+	res, execErr := executeCreate(ctx, deps, types.CreateArgs{
+		Purpose: "p",
+		Seats:   []types.SeatDefinition{{ID: "s1", DisplayName: "one"}},
+		Humans:  []string{"U_alice"},
+	})
+	require.NoError(t, execErr)
+	require.Equal(t, []types.Human{{
+		SlackUserID: "U_alice",
+		DisplayName: "Alice",
+		Kind:        types.IdentityKindHuman,
+	}}, res.Humans)
+	require.Empty(t, res.Skipped)
+	require.Len(t, fa.Invites, 1)
+	require.Equal(t, fa.Chan.ID, fa.Invites[0][0])
+	require.Equal(t, "U_alice", fa.Invites[0][1])
+}
+
+func TestCreateWithHumans_partialSkip(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	fa := &slack.FakeAdapter{
+		Chan: slack.Channel{ID: "C_create_humans", Name: "huddle-p"},
+		UsersByRef: map[string]types.UserInfo{
+			"U_alice": {UserID: "U_alice", DisplayName: "Alice"},
+		},
+		ChannelMembers: map[string][]string{"C_create_humans": {}},
+	}
+	deps := Deps{
+		Slack: fa,
+		Store: st,
+		Cfg:   config.Config{ChannelPrefix: "huddle-"},
+	}
+
+	res, execErr := executeCreate(ctx, deps, types.CreateArgs{
+		Purpose: "p",
+		Seats:   []types.SeatDefinition{{ID: "s1", DisplayName: "one"}},
+		Humans:  []string{"U_alice", "nope"},
+	})
+	require.NoError(t, execErr)
+	require.Equal(t, []types.Human{{
+		SlackUserID: "U_alice",
+		DisplayName: "Alice",
+		Kind:        types.IdentityKindHuman,
+	}}, res.Humans)
+	require.Equal(t, []types.SkippedHuman{{
+		Ref:    "nope",
+		Reason: types.SkippedReasonUnknownUser,
+	}}, res.Skipped)
+}
+
+func TestCreateWithHumans_invalidRef(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+
+	fa := &slack.FakeAdapter{
+		Chan: slack.Channel{ID: "C_invalid_ref", Name: "huddle-p"},
+		LookupUserErrByRef: map[string]error{
+			"bad-ref": slack.ErrInvalidUserRef,
+		},
+		ChannelMembers: map[string][]string{"C_invalid_ref": {}},
+	}
+	deps := Deps{
+		Slack: fa,
+		Store: st,
+		Cfg:   config.Config{ChannelPrefix: "huddle-"},
+	}
+
+	res, execErr := executeCreate(ctx, deps, types.CreateArgs{
+		Purpose: "p",
+		Seats:   []types.SeatDefinition{{ID: "s1", DisplayName: "one"}},
+		Humans:  []string{"bad-ref"},
+	})
+	require.NoError(t, execErr)
+	require.Empty(t, res.Humans)
+	require.Equal(t, []types.SkippedHuman{{
+		Ref:    "bad-ref",
+		Reason: types.SkippedReasonInvalidRef,
+	}}, res.Skipped)
 }
 
 func requireRPCCode(t *testing.T, err error, want int64) {
