@@ -238,7 +238,7 @@ func smokeRead(ctx context.Context, sess *mcp.ClientSession, designerKey string)
 }
 
 func smokeInviteHuman(ctx context.Context, sess *mcp.ClientSession, huddleID, humanRef string) error {
-	step("huddle.invite_human (" + humanRef + ")")
+	step(fmt.Sprintf("huddle.invite_human (%s)", humanRef))
 	res, err := callJSON(ctx, sess, "huddle.invite_human", map[string]any{
 		"huddleId": huddleID,
 		"humans":   []string{humanRef},
@@ -247,6 +247,9 @@ func smokeInviteHuman(ctx context.Context, sess *mcp.ClientSession, huddleID, hu
 		return fmt.Errorf("invite_human: %w", err)
 	}
 	dump(res)
+	if _, ok := res["invited"].([]any); !ok {
+		return fmt.Errorf("invite_human result missing invited array: %+v", res)
+	}
 	return nil
 }
 
