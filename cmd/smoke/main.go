@@ -7,6 +7,10 @@
 // scopes the slack adapter needs). Other huddle env vars are overridden to
 // keep smoke runs isolated from a developer's live MCP state.
 //
+// Optional HUDDLE_SMOKE_HUMAN_REF (Slack user ID or email) exercises
+// create-with-humans and huddle.invite_human; when unset those steps are
+// skipped but who_else.humans is still asserted.
+//
 // Usage:
 //
 //	go run ./cmd/smoke
@@ -42,6 +46,11 @@ func run() error {
 		fmt.Fprintln(os.Stderr, "WARN: HUDDLE_ORCHESTRATOR_SLACK_USER_ID is not set; you will not be auto-invited to the smoke channel. Export it to receive an invite.")
 	}
 
+	humanRef := strings.TrimSpace(os.Getenv("HUDDLE_SMOKE_HUMAN_REF"))
+	if humanRef == "" {
+		fmt.Fprintln(os.Stderr, "WARN: HUDDLE_SMOKE_HUMAN_REF is not set; skipping create-with-humans / invite_human steps. Export a Slack user ID or email to exercise the human-participant surface.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
@@ -67,15 +76,15 @@ func run() error {
 	}
 	defer func() { _ = sess.Close() }()
 
-	return runScenario(ctx, sess)
+	return runScenario(ctx, sess, humanRef)
 }
 
 // runScenario walks the v0 verb tour against an already-connected MCP
-// session: create → who_else (per seat) → post (3) → read → close. Lifted
-// out of run() so each layer is short enough for the cognitive-complexity
-// gate.
-func runScenario(ctx context.Context, sess *mcp.ClientSession) error {
-	createRes, err := smokeCreate(ctx, sess)
+// session: create → who_else (per seat) → post (3) → read → invite_human
+// (when humanRef set) → close. Lifted out of run() so each layer is short
+// enough for the cognitive-complexity gate.
+func runScenario(ctx context.Context, sess *mcp.ClientSession, humanRef string) error {
+	createRes, err := smokeCreate(ctx, sess, humanRef)
 	if err != nil {
 		return err
 	}
@@ -122,6 +131,12 @@ func runScenario(ctx context.Context, sess *mcp.ClientSession) error {
 		return err
 	}
 
+	if humanRef != "" {
+		if err := smokeInviteHuman(ctx, sess, huddleID, humanRef); err != nil {
+			return err
+		}
+	}
+
 	if err := smokeClose(ctx, sess, huddleID); err != nil {
 		return err
 	}
@@ -131,13 +146,13 @@ func runScenario(ctx context.Context, sess *mcp.ClientSession) error {
 	return nil
 }
 
-func smokeCreate(ctx context.Context, sess *mcp.ClientSession) (map[string]any, error) {
+func smokeCreate(ctx context.Context, sess *mcp.ClientSession, humanRef string) (map[string]any, error) {
 	step("huddle.create (designer + implementor)")
 	// Note: purpose deliberately does not include the word "smoke" — the
 	// channel name is "<prefix>-<slug>-<short id>", and the configured
 	// HUDDLE_CHANNEL_PREFIX already encodes that, so leading "smoke" in
 	// the purpose would produce an awkward "huddle-smoke-smoke-…" name.
-	createRes, err := callJSON(ctx, sess, "huddle.create", map[string]any{
+	args := map[string]any{
 		"purpose": "designer + implementor pairing on search filter UX",
 		"orchestrator": map[string]any{
 			"id":          "michael",
@@ -147,11 +162,18 @@ func smokeCreate(ctx context.Context, sess *mcp.ClientSession) (map[string]any, 
 			{"id": "designer", "displayName": "Designer Agent"},
 			{"id": "implementor", "displayName": "Implementor Agent"},
 		},
-	})
+	}
+	if humanRef != "" {
+		args["humans"] = []string{humanRef}
+	}
+	createRes, err := callJSON(ctx, sess, "huddle.create", args)
 	if err != nil {
 		return nil, fmt.Errorf("huddle.create: %w", err)
 	}
 	dump(createRes)
+	if _, ok := createRes["humans"].([]any); !ok {
+		return nil, fmt.Errorf("create result missing humans array: %+v", createRes)
+	}
 	return createRes, nil
 }
 
@@ -164,6 +186,9 @@ func smokeWhoElse(ctx context.Context, sess *mcp.ClientSession, seats []smokeSea
 		}
 		if got := orchestratorID(res); got != "michael" {
 			return fmt.Errorf("who_else(%s) orchestrator.id mismatch: got %q, want %q", s.ID, got, "michael")
+		}
+		if _, ok := res["humans"].([]any); !ok {
+			return fmt.Errorf("who_else(%s) missing humans array: %+v", s.ID, res)
 		}
 		dump(res)
 	}
@@ -209,6 +234,19 @@ func smokeRead(ctx context.Context, sess *mcp.ClientSession, designerKey string)
 		return fmt.Errorf("read: %w", err)
 	}
 	dump(readRes)
+	return nil
+}
+
+func smokeInviteHuman(ctx context.Context, sess *mcp.ClientSession, huddleID, humanRef string) error {
+	step("huddle.invite_human (" + humanRef + ")")
+	res, err := callJSON(ctx, sess, "huddle.invite_human", map[string]any{
+		"huddleId": huddleID,
+		"humans":   []string{humanRef},
+	})
+	if err != nil {
+		return fmt.Errorf("invite_human: %w", err)
+	}
+	dump(res)
 	return nil
 }
 
