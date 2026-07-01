@@ -40,7 +40,7 @@ The `test/e2e/` directory referenced in `docs/design.md` was superseded by `cmd/
 <!-- BEGIN dev-workbench (managed by /dev-workbench skill — re-run to refresh; hand-edits inside this block will be overwritten) -->
 ## Dev workbench
 
-Several MCP servers + skills are wired into every Claude Code session on this machine. **This is huddle — the multi-agent coordination plane itself** — so when working in this repo, the huddle verbs are the most directly relevant; the rest of the workbench is the surrounding scaffolding.
+Several MCP servers + skills are wired into every Claude Code session on this machine. **This is huddle — the multi-agent coordination plane itself** — so when working in this repo, the huddle verbs are the most directly relevant; the rest of the workbench is the surrounding scaffolding. Stuck on a *knowledge* question about another portfolio repo — how it behaves, its conventions, what's in flight there — `/consult` its steward instead of asking the operator; only *authority* questions (direction, spend, irreversible calls) go to the operator.
 
 ### dossier — project memory plane
 
@@ -139,6 +139,14 @@ Mid-session status update: What happened / What's next / What I recommend / What
 
 **Pair with:** use mid-session; `/shipped` is the post-completion equivalent.
 
+### `/consult` — summon a sibling repo's steward
+
+Summons an ephemeral subagent scoped to another portfolio repo for a same-turn answer to a knowledge question — read-only, no side effects. Knowledge questions go to a peer; authority questions to the operator.
+
+**Triggers:** *"ask the <repo> agent"*, *"what does the ship steward think"*, stuck mid-task on another repo's behavior / conventions / in-flight work, explicit `/consult`.
+
+**Pair with:** the escalation rung *before* pinging the operator — reach for it proactively when the answer lives in a sibling repo.
+
 ### `/worktree-*` — manage secondary git worktrees
 
 Thin skill family over plain `git worktree`. Use these instead of reaching for an MCP — they cover the verbs that mattered (add, list, remove, transfer, where) without an external state store.
@@ -176,7 +184,7 @@ dossier task_complete                      ←─ close-out
 
 ### Why this shape
 
-Each layer is independently swappable: dossier could be Linear, the worktree skills could be hand-rolled `git worktree` calls, ship could be a different agent runner, huddle could be Discord-backed. The seams are deliberate — substituting one doesn't ripple into the others. dossier owns "what" but not "how"; ship owns "how" but not "what"; skills compose them without owning state of their own.
+Each layer is independently swappable: dossier could be Linear, the worktree skills could be hand-rolled `git worktree` calls, ship could be a different agent runner, huddle could be Discord-backed. The seams are deliberate — substituting one doesn't ripple into the others. dossier owns "what" but not "how"; ship owns "how" but not "what"; skills compose them without owning state of their own. `/consult` owns the stuck path — peer knowledge before operator attention.
 
 The opinionation is the value — every PR uses the same review set, every branch lives under the same path, every task body has the same shape. Resist making any of this configurable.
 <!-- END dev-workbench -->
