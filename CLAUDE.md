@@ -246,3 +246,15 @@ If `make check` is red, run `validator` to get the diagnosis instead of guessing
 - `docs/design.md` — the "how" reference. Stack rationale, layout sketch, verb-level pseudocode, schema, env table. (Note: 2026-05-18 polish phase `polish-2026-05-18` queued for TS-era residue + e2e-dir-vs-cmd-smoke drift.)
 - `../mcp-workstation/huddle.md` — the "what" catalog entry (problem framing, MCP surface, mental model).
 - `~/pers/dossier-state/projects/huddle/` — task tracking; ongoing work lives here.
+
+<!-- local-offload:start -->
+## Local-first offload
+
+Before spending cloud tokens on a mechanical sub-step, check for a free local path (needs the `local` CLI / Ollama on this machine):
+
+- Narrowing a big file list, extracting structure from noisy tool output, shallow classification -> `/offload`
+- "Have we solved/decided this before?" questions about the operator's own work -> `/ask-portfolio`
+- Triaging a PR's bot-comment pile -> `/review-digest <PR#>`
+
+Deep judgment (code review, risk calls, dense-diff reasoning) stays with the primary model. If `local` is not on PATH, skip silently -- never block on this.
+<!-- local-offload:end -->
