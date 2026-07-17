@@ -85,7 +85,7 @@ Notable Go-isms:
 
 ## Dependencies
 
-Stay minimal. Stdlib first; reach for a module only when stdlib costs >20 lines of boilerplate.
+Stay minimal. Default to stdlib; add a dependency on its merits and argue it in the PR.
 
 | Module | Purpose | Notes |
 |---|---|---|
@@ -103,7 +103,7 @@ Stdlib-only for:
 Test deps:
 - `github.com/stretchr/testify` (`require` / `assert`) — keeps assertions concise without much ceremony
 
-No env-var-loading library; a local `.env` is read via a tiny helper or just `direnv` on the operator's machine.
+Env-var config is read with a tiny helper (or `direnv` locally); pull in a config library if one earns its place.
 
 ## v0 verb surface (recap)
 
